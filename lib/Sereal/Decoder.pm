@@ -5,7 +5,7 @@ use warnings;
 use Carp qw/croak/;
 use XSLoader;
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 use Exporter 'import';
 
 our @EXPORT_OK = qw(decode_sereal);
@@ -132,7 +132,7 @@ is concatenated into the same string (code not very robust...):
   my $pos = 0;
   eval {
     while (1) {
-      push @out, $decoder->decode_with_offset($sereal_string, 0);
+      push @out, $decoder->decode_with_offset($sereal_string, $pos);
       $pos += $decoder->bytes_consumed;
       last if $pos >= length($sereal_string)
            or not $decoder->bytes_consumed;
