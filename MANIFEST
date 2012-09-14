@@ -30,6 +30,7 @@ srl_protocol.h
 t/001_load.t
 t/010_desperate.t
 t/020_offset.t
+t/030_looks_like_sereal.t
 t/100_roundtrip.t
 t/150_dec_exception.t
 t/200_bulk.t
