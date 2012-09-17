@@ -5,10 +5,10 @@ use warnings;
 use Carp qw/croak/;
 use XSLoader;
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 # not for public consumption, just for testing.
-my $TestCompat = [qw( 0.08 0.07 0.06 )];
+my $TestCompat = [qw( 0.09 0.08 0.07 0.06 )];
 sub _test_compat {return(@$TestCompat, $VERSION)}
 
 use Exporter 'import';
@@ -88,6 +88,11 @@ encoder. These options are currently valid:
 
 If set, the decoder will refuse Snappy-compressed input data. This can be
 desirable for robustness. See the section C<ROBUSTNESS> below.
+
+=item refuse_objects
+
+If set, the decoder will refuse deserializing any objects in the input stream and
+instead throw and exception. Defaults to off. See the section C<ROBUSTNESS> below.
 
 =back
 
@@ -200,6 +205,12 @@ do you risk causing a hard OOM error from the kernel that cannot be
 trapped because Perl may require some small allocations to succeed
 before the now-invalid memory is released. It is at least not entirely
 trivial to craft a Sereal document that causes this behaviour.
+
+Finally, deserializing proper objects is potentially a problem because
+classes can define a destructor. Thus, the data fed to the decoder can
+cause the (deferred) execution of any destructor in your application.
+That's why the C<refuse_objects> option exists. Later on, we may or may
+not provide a facility to whitelist classes.
 
 =head1 PERFORMANCE
 
