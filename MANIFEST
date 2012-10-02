@@ -1,6 +1,7 @@
 author_tools/bench.pl
 author_tools/hobodecoder.pl
 author_tools/numeric_str_length.c
+author_tools/stringify_test.c
 author_tools/update_from_header.pl
 author_tools/valgrind.supp
 Changes
@@ -34,6 +35,7 @@ t/030_looks_like_sereal.t
 t/100_roundtrip.t
 t/150_dec_exception.t
 t/200_bulk.t
+t/300_overload.t
 t/data/corpus
 t/lib/Sereal/BulkTest.pm
 t/lib/Sereal/TestSet.pm
