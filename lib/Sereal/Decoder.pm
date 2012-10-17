@@ -5,10 +5,10 @@ use warnings;
 use Carp qw/croak/;
 use XSLoader;
 
-our $VERSION = '0.13';
+our $VERSION = '0.15';
 
 # not for public consumption, just for testing.
-my $TestCompat = [qw( 0.12 0.11 0.10 0.09 0.08 0.07 0.06 )];
+my $TestCompat = [qw( 0.15 0.13 0.12 0.11 0.10 0.09 0.08 0.07 0.06 )];
 sub _test_compat {return(@$TestCompat, $VERSION)}
 
 use Exporter 'import';
@@ -16,6 +16,8 @@ our @EXPORT_OK = qw(decode_sereal looks_like_sereal);
 our %EXPORT_TAGS = (all => \@EXPORT_OK);
 # export by default if run from command line
 our @EXPORT = ((caller())[1] eq '-e' ? @EXPORT_OK : ());
+
+sub CLONE_SKIP { 1 }
 
 XSLoader::load('Sereal::Decoder', $VERSION);
 
@@ -93,6 +95,12 @@ desirable for robustness. See the section C<ROBUSTNESS> below.
 
 If set, the decoder will refuse deserializing any objects in the input stream and
 instead throw and exception. Defaults to off. See the section C<ROBUSTNESS> below.
+
+=item validate_utf8
+
+If set, the decoder will refuse invalid UTF-8 byte sequences. This is off
+by default, but it's strongly encouraged to be turned on if you're dealing
+with any data that has been encoded by an external source (e.g. http cookies).
 
 =back
 
@@ -219,6 +227,14 @@ to be serialized. For ready-made comparison scripts, see the
 F<author_tools/bench.pl> and F<author_tools/dbench.pl> programs that are part
 of this distribution. Suffice to say that this library is easily competitive
 in both time and space efficiency with the best alternatives.
+
+=head1 THREAD-SAFETY
+
+C<Sereal::Decoder> is thread-safe on Perl's 5.8.7 and higher. This means
+"thread-safe" in the sense that if you create a new thread, all
+C<Sereal::Decoder> objects will become a reference to undef in the new
+thread. This might change in a future release to become a full clone
+of the decoder object.
 
 =head1 AUTHOR
 

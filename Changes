@@ -65,3 +65,14 @@ Revision history for Perl extension Sereal-Decoder
     => The work-around also slows down operation on 5.8.8 and older. Keep
        that in mind when comparing serialization techniques. Thank you.
 
+0.14 - unreleased
+
+0.15  Wed Oct 17 13:00 2012
+  - Decoder option validate_utf8
+    With this option (turned off by default for performance reasons)
+    the decoder will emit an error on malformed UTF-8. This will
+    *not* check for invalid code points; this can be added later, but Perls
+    that are recent enough will warn on those anyway.
+  - Thread-safety fix on Perls >= 5.8.7. Sereal is still not thread-safe
+    on older Perls 
+

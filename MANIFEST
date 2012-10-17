@@ -14,8 +14,6 @@ lib/Sereal/Decoder.pm
 lib/Sereal/Decoder/Constants.pm
 Makefile.PL
 MANIFEST			This list of files
-MYMETA.json
-MYMETA.yml
 ppport.h
 ptable.h
 snappy/csnappy.h
@@ -36,6 +34,8 @@ t/100_roundtrip.t
 t/150_dec_exception.t
 t/200_bulk.t
 t/300_overload.t
+t/400_utf8validate.t
+t/800_threads.t
 t/data/corpus
 t/lib/Sereal/BulkTest.pm
 t/lib/Sereal/TestSet.pm
