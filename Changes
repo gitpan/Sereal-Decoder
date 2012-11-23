@@ -76,3 +76,11 @@ Revision history for Perl extension Sereal-Decoder
   - Thread-safety fix on Perls >= 5.8.7. Sereal is still not thread-safe
     on older Perls 
 
+0.16 - unreleased
+0.17 - unreleased
+0.18 - unreleased
+
+0.19  Thu Nov 23 07:00 2012
+  - Add configurable recursion limit to the decoder
+  - Downgrade UTF8 Sereal serialized strings before decoding them
+

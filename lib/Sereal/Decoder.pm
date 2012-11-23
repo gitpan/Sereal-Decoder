@@ -5,10 +5,10 @@ use warnings;
 use Carp qw/croak/;
 use XSLoader;
 
-our $VERSION = '0.15';
+our $VERSION = '0.19';
 
 # not for public consumption, just for testing.
-my $TestCompat = [qw( 0.15 0.13 0.12 0.11 0.10 0.09 0.08 0.07 0.06 )];
+my $TestCompat = [map sprintf("%.2f", $_/100), reverse(6..18)]; # compat with 0.06 to 0.18
 sub _test_compat {return(@$TestCompat, $VERSION)}
 
 use Exporter 'import';
@@ -101,6 +101,17 @@ instead throw and exception. Defaults to off. See the section C<ROBUSTNESS> belo
 If set, the decoder will refuse invalid UTF-8 byte sequences. This is off
 by default, but it's strongly encouraged to be turned on if you're dealing
 with any data that has been encoded by an external source (e.g. http cookies).
+
+=item max_recursion_depth
+
+C<Sereal::Decoder> is recursive. If you pass it a Sereal document that is deeply
+nested, it will eventually exhaust the C stack. Therefore, there is a limit on
+the depth of recursion that is accepted. It defaults to 10000 nested calls. You
+may choose to override this value with the C<max_recursion_depth> option.
+Beware that setting it too high can cause hard crashes.
+
+Do note that the setting is somewhat approximate. Setting it to 10000 may break at
+somewhere between 9997 and 10003 nested structures depending on their types.
 
 =back
 
@@ -246,7 +257,7 @@ Steffen Mueller E<lt>smueller@cpan.orgE<gt>
 
 Rafaël Garcia-Suarez
 
-Ævar Arnfjörð Bjarmason
+Ævar Arnfjörð Bjarmason E<lt>avar@cpan.orgE<gt>
 
 Some inspiration and code was taken from Marc Lehmann's
 excellent JSON::XS module due to obvious overlap in

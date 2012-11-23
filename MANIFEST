@@ -32,9 +32,11 @@ t/020_offset.t
 t/030_looks_like_sereal.t
 t/100_roundtrip.t
 t/150_dec_exception.t
+t/160_recursion.t
 t/200_bulk.t
 t/300_overload.t
 t/400_utf8validate.t
+t/500_utf8decoding.t
 t/800_threads.t
 t/data/corpus
 t/lib/Sereal/BulkTest.pm
