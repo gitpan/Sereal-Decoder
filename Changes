@@ -84,3 +84,8 @@ Revision history for Perl extension Sereal-Decoder
   - Add configurable recursion limit to the decoder
   - Downgrade UTF8 Sereal serialized strings before decoding them
 
+0.20 - unreleased
+
+0.21 Wed Jan 02 08:00 2013
+  - Option 'max_num_hash_entries' to limit the number of accepted
+    hash entries.

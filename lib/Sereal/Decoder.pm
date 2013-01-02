@@ -5,10 +5,10 @@ use warnings;
 use Carp qw/croak/;
 use XSLoader;
 
-our $VERSION = '0.19';
+our $VERSION = '0.21';
 
 # not for public consumption, just for testing.
-my $TestCompat = [map sprintf("%.2f", $_/100), reverse(6..18)]; # compat with 0.06 to 0.18
+my $TestCompat = [map sprintf("%.2f", $_/100), reverse(6..20)]; # compat with 0.06 to ...
 sub _test_compat {return(@$TestCompat, $VERSION)}
 
 use Exporter 'import';
@@ -112,6 +112,15 @@ Beware that setting it too high can cause hard crashes.
 
 Do note that the setting is somewhat approximate. Setting it to 10000 may break at
 somewhere between 9997 and 10003 nested structures depending on their types.
+
+=item max_num_hash_entries
+
+If set to a non-zero value (default: 0), then C<Sereal::Decoder> will refuse
+to deserialize any hash/dictionary (or hash-based object) with more than
+that number of entries. This is to be able to respond quickly to any future
+hash-collision attacks on Perl's hash function. Chances are, you don't want
+or need this. For a gentle introduction to the topic from the cryptographic
+point of view, see L<http://en.wikipedia.org/wiki/Collision_attack>.
 
 =back
 
@@ -272,8 +281,8 @@ their gratitude.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2012 by Steffen Mueller
-Copyright (C) 2012 by Yves Orton
+Copyright (C) 2012, 2013 by Steffen Mueller
+Copyright (C) 2012, 2013 by Yves Orton
 
 The license for the code in this distribution is the following,
 with the exceptions listed below:
