@@ -5,10 +5,10 @@ use warnings;
 use Carp qw/croak/;
 use XSLoader;
 
-our $VERSION = '0.21';
+our $VERSION = '0.23'; # Don't forget to update the TestCompat set for testing against installed encoders!
 
 # not for public consumption, just for testing.
-my $TestCompat = [map sprintf("%.2f", $_/100), reverse(6..20)]; # compat with 0.06 to ...
+my $TestCompat = [map sprintf("%.2f", $_/100), reverse(23..23)]; # compat with 0.23 to ...
 sub _test_compat {return(@$TestCompat, $VERSION)}
 
 use Exporter 'import';
@@ -82,27 +82,28 @@ L<https://github.com/Sereal/Sereal/wiki/Sereal-Comparison-Graphs>.
 
 Constructor. Optionally takes a hash reference as first parameter. This hash
 reference may contain any number of options that influence the behaviour of the
-encoder. These options are currently valid:
+encoder.
 
-=over 2
+Currently, the following options are recognized, none of them are on
+by default.
 
-=item refuse_snappy
+=head3 refuse_snappy
 
 If set, the decoder will refuse Snappy-compressed input data. This can be
 desirable for robustness. See the section C<ROBUSTNESS> below.
 
-=item refuse_objects
+=head3 refuse_objects
 
 If set, the decoder will refuse deserializing any objects in the input stream and
 instead throw and exception. Defaults to off. See the section C<ROBUSTNESS> below.
 
-=item validate_utf8
+=head3 validate_utf8
 
 If set, the decoder will refuse invalid UTF-8 byte sequences. This is off
 by default, but it's strongly encouraged to be turned on if you're dealing
 with any data that has been encoded by an external source (e.g. http cookies).
 
-=item max_recursion_depth
+=head3 max_recursion_depth
 
 C<Sereal::Decoder> is recursive. If you pass it a Sereal document that is deeply
 nested, it will eventually exhaust the C stack. Therefore, there is a limit on
@@ -113,7 +114,7 @@ Beware that setting it too high can cause hard crashes.
 Do note that the setting is somewhat approximate. Setting it to 10000 may break at
 somewhere between 9997 and 10003 nested structures depending on their types.
 
-=item max_num_hash_entries
+=head3 max_num_hash_entries
 
 If set to a non-zero value (default: 0), then C<Sereal::Decoder> will refuse
 to deserialize any hash/dictionary (or hash-based object) with more than
@@ -121,8 +122,6 @@ that number of entries. This is to be able to respond quickly to any future
 hash-collision attacks on Perl's hash function. Chances are, you don't want
 or need this. For a gentle introduction to the topic from the cryptographic
 point of view, see L<http://en.wikipedia.org/wiki/Collision_attack>.
-
-=back
 
 =head1 INSTANCE METHODS
 
@@ -292,6 +291,7 @@ it under the same terms as Perl itself.
 
 Except portions taken from Marc Lehmann's code for the JSON::XS
 module, which is licensed under the same terms as this module.
+(Many thanks to Marc for inspiration, and code.)
 
 Also except the code for Snappy compression library, whose license
 is reproduced below and which, to the best of our knowledge,
