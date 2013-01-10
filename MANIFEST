@@ -44,4 +44,5 @@ t/lib/Sereal/BulkTest.pm
 t/lib/Sereal/TestSet.pm
 typemap
 xt/900_rand.t
-META.yml                                 Module meta-data (added by MakeMaker)
+META.yml                                 Module YAML meta-data (added by MakeMaker)
+META.json                                Module JSON meta-data (added by MakeMaker)
