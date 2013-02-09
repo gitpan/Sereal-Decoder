@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Sereal-Decoder
-version:            0.28
+version:            0.29
 abstract:           Fast, compact, powerful binary deserialization
 author:
     - Steffen Mueller <smueller@cpan.org>
