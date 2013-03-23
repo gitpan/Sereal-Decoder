@@ -17,6 +17,7 @@ MANIFEST			This list of files
 ppport.h
 ptable.h
 snappy/csnappy.h
+snappy/csnappy_compat.h
 snappy/csnappy_compress.c
 snappy/csnappy_decompress.c
 snappy/csnappy_internal.h
