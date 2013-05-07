@@ -184,6 +184,9 @@ srl_build_decoder_struct(pTHX_ HV *opt)
 
         if ( (svp = hv_fetchs(opt, "max_num_hash_entries", 0)) && SvTRUE(*svp))
             dec->max_num_hash_entries = SvUV(*svp);
+
+        if ( (svp = hv_fetchs(opt, "incremental", 0)) && SvTRUE(*svp))
+            SRL_DEC_SET_OPTION(dec,SRL_F_DECODER_DESTRUCTIVE_INCREMENTAL);
     }
 
     return dec;
@@ -304,6 +307,12 @@ srl_decode_into(pTHX_ srl_decoder_t *dec, SV *src, SV* into, UV start_offset)
     if (dec->bytes_consumed == 0)
         dec->bytes_consumed = dec->pos - dec->buf_start;
 
+    if (SRL_DEC_HAVE_OPTION(dec, SRL_F_DECODER_DESTRUCTIVE_INCREMENTAL)) {
+        STRLEN len;
+        char *pv= SvPV(src,len);
+        /* check the length here? do something different if the string is now exhausted? */
+        sv_chop(src, pv + dec->bytes_consumed);
+    }
 
     srl_clear_decoder(aTHX_ dec);
     return into;
@@ -386,7 +395,7 @@ srl_read_header(pTHX_ srl_decoder_t *dec)
         }
         else
         {
-            SRL_ERRORf1( "Serial document encoded in an unknown format '%d'",
+            SRL_ERRORf1( "Sereal document encoded in an unknown format '%d'",
                      (dec->proto_version_and_flags & SRL_PROTOCOL_ENCODING_MASK) >> 4 );
         }
 
