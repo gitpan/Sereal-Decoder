@@ -405,7 +405,7 @@ srl_read_header(pTHX_ srl_decoder_t *dec)
          * protocol version. */
         dec->pos += header_len;
     } else {
-        SRL_ERROR("bad header");
+        SRL_ERROR("Bad Sereal header: Does not start with Sereal magic");
     }
 }
 
@@ -416,6 +416,7 @@ srl_finalize_structure(pTHX_ srl_decoder_t *dec)
     if (dec->weakref_av)
         av_clear(dec->weakref_av);
     if (dec->ref_stashes) {
+        /* FIXME the iterator may be leaked on exceptions! */
         PTABLE_ITER_t *it = PTABLE_iter_new(dec->ref_stashes);
         PTABLE_ENTRY_t *ent;
 
@@ -427,9 +428,11 @@ srl_finalize_structure(pTHX_ srl_decoder_t *dec)
             AV *ref_bless_av  = PTABLE_fetch(dec->ref_bless_av, ent->key);
             I32 len;
             if (expect_false( !stash || !ref_bless_av )) {
+                PTABLE_iter_free(it);
                 SRL_ERROR("missing stash or ref_bless_av!");
             }
             for( len= av_len(ref_bless_av) + 1 ; len > 0 ; len-- ) {
+                /* FIXME can av_pop throw exceptions? The iterator may be leaked then... */
                 SV* obj= av_pop(ref_bless_av); /*note that av_pop does NOT refcnt dec the sv*/
                 if (SvREFCNT(obj)>1) {
                     /* It is possible that someone handcrafts a hash with a key collision,
@@ -443,15 +446,19 @@ srl_finalize_structure(pTHX_ srl_decoder_t *dec)
 #if USE_588_WORKAROUND
                         /* was blessed early, don't rebless */
 #else
+                        /* FIXME can sv_bless throw exceptions? The iterator may be leaked then... */
                         if (!nobless)
                             sv_bless(obj, stash);
 #endif
                     } else {
+                        PTABLE_iter_free(it);
                         SRL_ERROR("object missing from ref_bless_av array?");
                     }
                 } else {
+                    /* FIXME can warn throw exceptions? The iterator may be leaked then... */
                     warn("serialization contains a duplicated key, ignoring");
                 }
+                /* FIXME can SvREFCNT_dec throw exceptions? The iterator may be leaked then... */
                 SvREFCNT_dec(obj);
             }
         }
@@ -684,7 +691,7 @@ srl_read_array(pTHX_ srl_decoder_t *dec, SV *into, U8 tag) {
         av_array= AvARRAY((AV*)into);
         av_end= av_array + len;
 
-        for ( ; av_array < av_end ; av_array++) {
+        for ( ; av_array != av_end ; av_array++) {
             if ( expect_false( *dec->pos == SRL_HDR_ALIAS ) ) {
                 dec->pos++;
                 *av_array= srl_read_alias(aTHX_ dec);
@@ -796,7 +803,6 @@ srl_read_hash(pTHX_ srl_decoder_t *dec, SV* into, U8 tag) {
         }
         if ( expect_false( *dec->pos == SRL_HDR_ALIAS ) ) {
             dec->pos++;
-            SvREFCNT_dec(*fetched_sv);
             *fetched_sv= srl_read_alias(aTHX_ dec);
         } else {
             srl_read_single_value(aTHX_ dec, *fetched_sv);

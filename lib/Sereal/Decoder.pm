@@ -5,7 +5,7 @@ use warnings;
 use Carp qw/croak/;
 use XSLoader;
 
-our $VERSION = '0.36'; # Don't forget to update the TestCompat set for testing against installed encoders!
+our $VERSION = '0.37'; # Don't forget to update the TestCompat set for testing against installed encoders!
 
 # not for public consumption, just for testing.
 my $TestCompat = [ map sprintf("%.2f", $_/100), reverse( 23 .. int($VERSION * 100) ) ]; # compat with 0.23 to ...
@@ -53,9 +53,6 @@ Sereal::Decoder - Fast, compact, powerful binary deserialization
   $is_likely_sereal = $decoder->looks_like_sereal($some_string);
 
 =head1 DESCRIPTION
-
-B<This is an experimental module. The interface may change without notice.
-Before using it in production, please get in touch with the authors!>
 
 This library implements a deserializer for an efficient, compact-output,
 and feature-rich binary protocol called I<Sereal>.
