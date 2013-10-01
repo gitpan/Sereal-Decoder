@@ -11,6 +11,7 @@ typedef struct {
     unsigned char *buf_end;             /* ptr to end of input buffer */
     unsigned char *pos;                 /* ptr to current position within input buffer */
     unsigned char *save_pos;            /* used for COPY tags */
+    unsigned char *body_pos;            /* in Sereal V2, all offsets are relative to the body */
     STRLEN buf_len;
 
     U32 flags;                          /* flag-like options: See F_* defines in srl_decoder.c */
@@ -29,8 +30,13 @@ typedef struct {
 /* constructor; don't need destructor, this sets up a callback */
 srl_decoder_t *srl_build_decoder_struct(pTHX_ HV *opt);
 
-/* main routine */
-SV *srl_decode_into(pTHX_ srl_decoder_t *dec, SV *src, SV *into, UV start_offset);
+/* main routines */
+/* will return a mortal or the new contents of into if that isn't NULL */
+SV *srl_decode_into(pTHX_ srl_decoder_t *dec, SV *src, SV *body_into, UV start_offset);
+/* will return a mortal or the new contents of header_into if that isn't NULL */
+SV *srl_decode_header_into(pTHX_ srl_decoder_t *dec, SV *src, SV *header_into, UV start_offset);
+/* decode both header and body - must pass in two SVs to write into */
+void srl_decode_all_into(pTHX_ srl_decoder_t *dec, SV *src, SV *header_into, SV *body_into, UV start_offset);
 
 /* Explicit destructor */
 void srl_destroy_decoder(pTHX_ srl_decoder_t *dec);
@@ -45,8 +51,22 @@ void srl_decoder_destructor_hook(pTHX_ void *p);
 #define BUF_NOT_DONE(dec) ((dec)->pos < (dec)->buf_end)
 #define BUF_DONE(dec) ((dec)->pos >= (dec)->buf_end)
 
-#define SRL_BASE_ERROR_FORMAT "Sereal: Error in %s line %u: "
-#define SRL_BASE_ERROR_ARGS __FILE__, __LINE__
+#define BODY_POS_OFS(enc) ((dec)->pos - (dec)->body_pos)
+
+/* these are mostly for right between deserializing the header and the body */
+#define SRL_SET_BODY_POS(dec, pos_ptr) ((dec)->body_pos = pos_ptr)
+#define SRL_UPDATE_BODY_POS(dec)                                                    \
+    STMT_START {                                                                    \
+        if (expect_false(SRL_DEC_HAVE_OPTION((dec), SRL_F_DECODER_PROTOCOL_V1))) {  \
+            SRL_SET_BODY_POS(dec, (dec)->buf_start);                                \
+        } else {                                                                    \
+            SRL_SET_BODY_POS(dec, (dec)->pos-1);                                    \
+        }                                                                           \
+    } STMT_END
+
+
+#define SRL_BASE_ERROR_FORMAT "Sereal: Error in %s line %u and char %i of input: "
+#define SRL_BASE_ERROR_ARGS __FILE__, __LINE__, (int)(1 + dec->pos - dec->buf_start)
 
 #define SRL_ERROR(msg)                          croak(SRL_BASE_ERROR_FORMAT "%s", SRL_BASE_ERROR_ARGS, (msg))
 #define SRL_ERRORf1(fmt,var)                    croak(SRL_BASE_ERROR_FORMAT fmt, SRL_BASE_ERROR_ARGS, (var))
@@ -61,7 +81,7 @@ void srl_decoder_destructor_hook(pTHX_ void *p);
 #define SRL_ERROR_BAD_COPY(dec, tag) \
     SRL_ERRORf1("While processing tag SRL_HDR_%s encountered a bad COPY tag", tag_name[(tag) & 127])
 #define SRL_ERROR_UNEXPECTED(dec, tag, msg) \
-    SRL_ERRORf2("Unexpected tag %s while expecting %s", tag_name[(tag || *(dec)->pos) & 127], msg)
+    SRL_ERRORf2("Unexpected tag %s while expecting %s", tag_name[(tag) & 127], msg)
 #define SRL_ERROR_REFUSE_OBJECT() \
     SRL_ERROR("Encountered object in input, but the 'refuse_objects' option is in effect");
 #define SRL_ERROR_PANIC(dec, msg) SRL_ERRORf1("Panic: %s", msg);
@@ -86,12 +106,13 @@ void srl_decoder_destructor_hook(pTHX_ void *p);
 #define SRL_F_DECODER_NO_BLESS_OBJECTS 128UL
 /* Persistent flag: Destructive incremental parsing */
 #define SRL_F_DECODER_DESTRUCTIVE_INCREMENTAL 256UL
-
+/* Non-persistent flag: The current packet is using protocol version 1 */
+#define SRL_F_DECODER_PROTOCOL_V1 512UL
 
 #define SRL_DEC_HAVE_OPTION(dec, flag_num) ((dec)->flags & flag_num)
 #define SRL_DEC_SET_OPTION(dec, flag_num) ((dec)->flags |= flag_num)
 #define SRL_DEC_UNSET_OPTION(dec, flag_num) ((dec)->flags &= ~flag_num)
-#define SRL_DEC_VOLATILE_FLAGS (SRL_F_DECODER_NEEDS_FINALIZE|SRL_F_DECODER_DECOMPRESS_SNAPPY)
+#define SRL_DEC_VOLATILE_FLAGS (SRL_F_DECODER_NEEDS_FINALIZE|SRL_F_DECODER_DECOMPRESS_SNAPPY|SRL_F_DECODER_PROTOCOL_V1)
 #define SRL_DEC_RESET_VOLATILE_FLAGS(dec) ((dec)->flags &= ~SRL_DEC_VOLATILE_FLAGS)
 
 /* 
