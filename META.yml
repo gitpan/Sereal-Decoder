@@ -11,6 +11,7 @@ build_requires:
   Scalar::Util: 0
   Test::LongString: 0
   Test::More: 0.88
+  Test::Warn: 0
   XSLoader: 0
 configure_requires:
   ExtUtils::MakeMaker: 0
@@ -31,4 +32,4 @@ requires:
 resources:
   bugtracker: https://github.com/Sereal/Sereal/issues
   repository: git://github.com/Sereal/Sereal.git
-version: 2.00_01
+version: 2.00_02
