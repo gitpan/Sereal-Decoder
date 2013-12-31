@@ -298,8 +298,8 @@ srl_decode_into_internal(pTHX_ srl_decoder_t *dec, SV *src, SV *header_into, SV 
         buf_sv = sv_2mortal( newSV(sereal_header_len + dest_len + 1 ));
         buf = (unsigned char *)SvPVX(buf_sv);
 
-        /* FIXME probably unnecessary to copy the Sereal header! */
-        Copy(dec->buf_start, buf, sereal_header_len, unsigned char);
+        /* not necessary to copy the Sereal header! */
+        /* Copy(dec->buf_start, buf, sereal_header_len, unsigned char); */
 
         old_pos = dec->pos;
         dec->buf_start = buf;
@@ -1062,7 +1062,7 @@ srl_read_object(pTHX_ srl_decoder_t *dec, SV* into, U8 obj_tag)
     if (tag == SRL_HDR_COPY) {
         ofs= srl_read_varint_uv_offset(aTHX_ dec, " while reading COPY class name");
         storepos= ofs;
-        if (LIKELY( dec->ref_seenhash != NULL )) {
+        if (expect_true( dec->ref_seenhash != NULL )) {
             class_stash= PTABLE_fetch(dec->ref_seenhash, (void *)ofs);
         }
         if (!class_stash) {
@@ -1136,11 +1136,12 @@ srl_thaw_callback(pTHX_ srl_decoder_t *dec, SV *into, HV *class_stash)
     /* Need to make a THAW call if possible */
     char *classname;
     SV *tmp_into = sv_2mortal(newSV(0)); /* FIXME ugh, a new mortal each time */
+    GV *method;
 
     /* Get the data structure for THAW from the Sereal stream */
     srl_read_single_value(aTHX_ dec, tmp_into);
 
-    GV *method = gv_fetchmethod_autoload(class_stash, "THAW", 0);
+    method = gv_fetchmethod_autoload(class_stash, "THAW", 0);
 
     if (expect_false( method == NULL ))
         SRL_ERRORf1("No THAW method defined for class '%s'", HvNAME(class_stash));
@@ -1167,7 +1168,7 @@ srl_thaw_callback(pTHX_ srl_decoder_t *dec, SV *into, HV *class_stash)
         /* TODO explore method lookup caching */
         SPAGAIN;
 
-        if (LIKELY( count == 1 )) {
+        if (expect_true( count == 1 )) {
             SV *tmpsv = POPs;
             sv_setsv(into, tmpsv); /* copy to output SV */
         }
