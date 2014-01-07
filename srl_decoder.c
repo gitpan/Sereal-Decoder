@@ -1011,23 +1011,25 @@ srl_read_objectv(pTHX_ srl_decoder_t *dec, SV* into, U8 obj_tag)
     if (expect_false( SRL_DEC_HAVE_OPTION(dec, SRL_F_DECODER_REFUSE_OBJECTS) ))
         SRL_ERROR_REFUSE_OBJECT();
 
-    ofs= srl_read_varint_uv_offset(aTHX_ dec," while reading OBJECTV classname");
+    ofs= srl_read_varint_uv_offset(aTHX_ dec," while reading OBJECTV(_FREEZE) classname");
 
     if (expect_false( !dec->ref_bless_av ))
-        SRL_ERROR("Corrupted packet. OBJECTV used without preceding OBJECT to define classname");
+        SRL_ERROR("Corrupted packet. OBJECTV(_FREEZE) used without "
+                  "preceding OBJECT(_FREEZE) to define classname");
     av= (AV *)PTABLE_fetch(dec->ref_bless_av, (void *)ofs);
     if (expect_false( NULL == av )) {
-        SRL_ERRORf1("Corrupted packet. OBJECTV references unknown classname offset: %lu", (unsigned long)ofs);
+        SRL_ERRORf1("Corrupted packet. OBJECTV(_FREEZE) references unknown classname offset: %lu", (unsigned long)ofs);
     }
 
-
-    if (expect_false( obj_tag == SRL_HDR_OBJECT_FREEZE )) {
+    /* checking tag: SRL_HDR_OBJECTV_FREEZE or SRL_HDR_OBJECTV? */
+    if (expect_false( obj_tag == SRL_HDR_OBJECTV_FREEZE )) {
         HV *class_stash= PTABLE_fetch(dec->ref_stashes, (void *)ofs);
         if (expect_false( class_stash == NULL ))
-            SRL_ERROR("Corrupted packet. OBJECTV used without preceding OBJECT to define classname");
+            SRL_ERROR("Corrupted packet. OBJECTV(_FREEZE) used without "
+                      "preceding OBJECT(_FREEZE) to define classname");
         srl_read_frozen_object(aTHX_ dec, class_stash, into);
     }  else {
-
+        /* SRL_HDR_OBJECTV, not SRL_HDR_OBJECTV_FREEZE */
         /* now deparse the thing we are going to bless */
         srl_read_single_value(aTHX_ dec, into);
 
@@ -1039,7 +1041,8 @@ srl_read_objectv(pTHX_ srl_decoder_t *dec, SV* into, U8 obj_tag)
             /* See 'define USE_588_WORKAROUND' above for a discussion of what this does. */
             HV *class_stash= PTABLE_fetch(dec->ref_stashes, (void *)ofs);
             if (expect_false( class_stash == NULL ))
-                SRL_ERROR("Corrupted packet. OBJECTV used without preceding OBJECT to define classname");
+                SRL_ERROR("Corrupted packet. OBJECTV(_FREEZE) used without "
+                          "preceding OBJECT(_FREEZE) to define classname");
             if (!SRL_DEC_HAVE_OPTION(dec, SRL_F_DECODER_NO_BLESS_OBJECTS))
                 sv_bless(into, class_stash);
         }
@@ -1171,7 +1174,7 @@ srl_read_frozen_object(pTHX_ srl_decoder_t *dec, HV *class_stash, SV *into)
     char *classname = HvNAME(class_stash);
     SV* referent;
     SV *replacement;
-    
+
     /* At this point in the input stream we should have REFN WHATEVER. The WHATEVER
      * may be referenced from multiple RV's in the data structure, which means that
      * srl_read_single_value() will cache the *unthawed* representation when we finally
@@ -1186,9 +1189,17 @@ srl_read_frozen_object(pTHX_ srl_decoder_t *dec, HV *class_stash, SV *into)
 
     srl_read_single_value(aTHX_ dec, into);
 
+    /* Assert that we got a top level array ref as the spec requires.
+     * Not throwing an exception here violates expectations down the line and
+     * can lead to segfaults. */
+    if (expect_false( !SvROK(into) || SvTYPE(SvRV(into)) != SVt_PVAV ))
+        SRL_ERROR("Corrupted packet. OBJECT(V)_FREEZE used without "
+                  "being followed by an array reference");
+
     {
         int count;
         AV *arg_av= (AV*)SvRV(into);
+        int arg_av_len = av_len(arg_av)+1;
         dSP;
 
         ENTER;
@@ -1201,8 +1212,8 @@ srl_read_frozen_object(pTHX_ srl_decoder_t *dec, HV *class_stash, SV *into)
         /* FIXME do not recreate the following SV. That's dumb and wasteful! - so long as it doesnt get modified! */
         PUSHs(sv_2mortal(newSVpvs("Sereal")));
         /* Push the args into the stack */
-        for (count=0 ; count < av_len(arg_av) + 1; count++) {
-            PUSHs((SV*)*av_fetch(arg_av,count,0));
+        for (count=0 ; count < arg_av_len; count++) {
+            PUSHs((SV*)*av_fetch(arg_av, count, 0));
         }
 
         PUTBACK;
@@ -1222,6 +1233,7 @@ srl_read_frozen_object(pTHX_ srl_decoder_t *dec, HV *class_stash, SV *into)
         FREETMPS;
         LEAVE;
     }
+
     /* At this point "into" is an SvRV pointing at the *unthawed* representation.
      * This means we need to a) remove the old unthawed item and dispose of it
      * and b) make "into" point at the replacement, and c) if necessary store the
