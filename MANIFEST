@@ -32,8 +32,6 @@ t/001_load.t
 t/010_desperate.t
 t/020_incremental.t
 t/030_looks_like_sereal.t
-t/100_roundtrip.t
-t/101_roundtrip_v1.t
 t/110_nobless.t
 t/150_dec_exception.t
 t/160_recursion.t
@@ -41,13 +39,15 @@ t/200_bulk.t
 t/300_overload.t
 t/400_utf8validate.t
 t/500_utf8decoding.t
+t/700_roundtrip.t
+t/701_roundtrip_v1.t
 t/800_threads.t
 t/900_regr_issue_15.t
 t/901_regr_segv.t
+t/902_bad_input.t
 t/data/corpus
 t/lib/Sereal/BulkTest.pm
 t/lib/Sereal/TestSet.pm
 typemap
 xt/900_rand.t
-META.yml                                 Module YAML meta-data (added by MakeMaker)
-META.json                                Module JSON meta-data (added by MakeMaker)
+META.yml                                 Module meta-data (added by MakeMaker)

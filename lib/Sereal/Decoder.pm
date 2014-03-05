@@ -5,7 +5,7 @@ use warnings;
 use Carp qw/croak/;
 use XSLoader;
 
-our $VERSION = '2.03'; # Don't forget to update the TestCompat set for testing against installed encoders!
+our $VERSION = '2.04'; # Don't forget to update the TestCompat set for testing against installed encoders!
 
 # not for public consumption, just for testing.
 (my $num_version = $VERSION) =~ s/_//;
@@ -144,7 +144,7 @@ This means you can do this:
 
 =head2 decode
 
-Given a byte string of Sereal data, the C<decode> call derializes that data
+Given a byte string of Sereal data, the C<decode> call deserializes that data
 structure. The result can be obtained in one of two ways: C<decode> accepts
 a second parameter, which is a scalar to write the result to, AND C<decode>
 will return the resulting data structure.
@@ -232,7 +232,7 @@ input data as reasonably possible. This means that it should never
 (though read on) segfault. It may, however, cause a large malloc
 to fail. Generally speaking, invalid data should cause a Perl-trappable
 exception. The one exception is that for Snappy-compressed Sereal documents,
-the Snappy library may cause segmentation faults (invalid reads orwrites).
+the Snappy library may cause segmentation faults (invalid reads or writes).
 This should only be a problem if you do not checksum your data (internal
 checksum support is a To-Do) or if you accept data from potentially
 malicious sources.
@@ -263,11 +263,9 @@ the C<FREEZE/THAW> mechanism, please refer to L<Sereal::Encoder>.
 
 =head1 PERFORMANCE
 
-The exact performance in time and space depends heavily on the data structure
-to be serialized. For ready-made comparison scripts, see the
-F<author_tools/bench.pl> and F<author_tools/dbench.pl> programs that are part
-of this distribution. Suffice to say that this library is easily competitive
-in both time and space efficiency with the best alternatives.
+Please refer to the PERFORMANCE documention section in the L<Sereal::Encoder>
+module that has more detailed information about Sereal performance and
+tuning thereof.
 
 =head1 THREAD-SAFETY
 
@@ -290,7 +288,7 @@ L<https://groups.google.com/forum/?fromgroups#!forum/sereal-announce>
 Sereal development list:
 L<https://groups.google.com/forum/?fromgroups#!forum/sereal-dev>
 
-=head1 AUTHORS
+=head1 AUTHORS AND CONTRIBUTORS
 
 Yves Orton E<lt>demerphq@gmail.comE<gt>
 
@@ -302,7 +300,11 @@ Rafaël Garcia-Suarez
 
 Ævar Arnfjörð Bjarmason E<lt>avar@cpan.orgE<gt>
 
+Tim Bunce
+
 Daniel Dragan E<lt>bulkdd@cpan.orgE<gt> (Windows support and bugfixes)
+
+Zefram
 
 Some inspiration and code was taken from Marc Lehmann's
 excellent JSON::XS module due to obvious overlap in
