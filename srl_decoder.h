@@ -14,7 +14,7 @@ typedef struct {
     unsigned char *body_pos;            /* in Sereal V2, all offsets are relative to the body */
     STRLEN buf_len;
 
-    U32 flags;                          /* flag-like options: See F_* defines in srl_decoder.c */
+    U32 flags;                          /* flag-like options: See SRL_F_DECODER_* defines in srl_decoder.c */
     UV max_recursion_depth;             /* Configurable limit on the number of recursive calls we're willing to make */
     UV max_num_hash_entries;            /* Configured maximum number of acceptable entries in a hash */
     ptable_ptr ref_seenhash;            /* ptr table for avoiding circular refs */
@@ -90,9 +90,9 @@ void srl_decoder_destructor_hook(pTHX_ void *p);
 /* If set, the decoder struct needs to be cleared instead of freed at
  * the end of a deserialization operation */
 #define SRL_F_REUSE_DECODER 1UL
-/* If set, then the decoder destructor was already pushed to the
- * callback stack */
-#define SRL_F_DECODER_DESTRUCTOR_OK 2UL
+/* If set, then the decoder is already in use and srl_decode_into will
+ * clone its own new decoder. */
+#define SRL_F_DECODER_DIRTY 2UL
 /* Non-persistent flag! */
 #define SRL_F_DECODER_NEEDS_FINALIZE 4UL
 /* Non-persistent flag! */
@@ -113,7 +113,7 @@ void srl_decoder_destructor_hook(pTHX_ void *p);
 #define SRL_DEC_HAVE_OPTION(dec, flag_num) ((dec)->flags & flag_num)
 #define SRL_DEC_SET_OPTION(dec, flag_num) ((dec)->flags |= flag_num)
 #define SRL_DEC_UNSET_OPTION(dec, flag_num) ((dec)->flags &= ~flag_num)
-#define SRL_DEC_VOLATILE_FLAGS (SRL_F_DECODER_NEEDS_FINALIZE|SRL_F_DECODER_DECOMPRESS_SNAPPY|SRL_F_DECODER_PROTOCOL_V1)
+#define SRL_DEC_VOLATILE_FLAGS (SRL_F_DECODER_NEEDS_FINALIZE|SRL_F_DECODER_DECOMPRESS_SNAPPY|SRL_F_DECODER_PROTOCOL_V1|SRL_F_DECODER_DIRTY)
 #define SRL_DEC_RESET_VOLATILE_FLAGS(dec) ((dec)->flags &= ~SRL_DEC_VOLATILE_FLAGS)
 
 /* 

@@ -92,7 +92,8 @@ void srl_destroy_decoder(pTHX_ srl_decoder_t *dec);                 /* destructo
 void srl_decoder_destructor_hook(pTHX_ void *p);                    /* destructor hook - called automagically */
 
 /* the top level components of the decode process - called by srl_decode_into() */
-SRL_STATIC_INLINE void srl_begin_decoding(pTHX_ srl_decoder_t *dec, SV *src, UV start_offset);       /* set up the decoder to handle a given var */
+/* srl_begin_decoding: set up the decoder to handle a given var */
+SRL_STATIC_INLINE srl_decoder_t *srl_begin_decoding(pTHX_ srl_decoder_t *dec, SV *src, UV start_offset);
 SRL_STATIC_INLINE void srl_read_header(pTHX_ srl_decoder_t *dec, SV *header_user_data); /* read/validate header */
 SRL_STATIC_INLINE void srl_read_single_value(pTHX_ srl_decoder_t *dec, SV* into);   /* main recursive dump routine */
 SRL_STATIC_INLINE void srl_finalize_structure(pTHX_ srl_decoder_t *dec);             /* optional finalize structure logic */
@@ -220,6 +221,24 @@ srl_build_decoder_struct(pTHX_ HV *opt)
     return dec;
 }
 
+/* Clone a decoder whilst resetting ephemeral state on the clone. */
+SRL_STATIC_INLINE srl_decoder_t *
+srl_build_decoder_struct_alike(pTHX_ srl_decoder_t *proto)
+{
+    srl_decoder_t *dec;
+
+    Newxz(dec, 1, srl_decoder_t);
+
+    dec->ref_seenhash = PTABLE_new();
+    dec->max_recursion_depth = proto->max_recursion_depth;
+    dec->max_num_hash_entries = proto->max_num_hash_entries;
+
+    dec->flags = proto->flags;
+    SRL_DEC_RESET_VOLATILE_FLAGS(dec);
+
+    return dec;
+}
+
 /* Explicit destructor */
 void
 srl_destroy_decoder(pTHX_ srl_decoder_t *dec)
@@ -248,9 +267,6 @@ srl_decoder_destructor_hook(pTHX_ void *p)
 {
     srl_decoder_t *dec = (srl_decoder_t *)p;
 
-    assert(SRL_DEC_HAVE_OPTION(dec, SRL_F_DECODER_DESTRUCTOR_OK));
-    SRL_DEC_UNSET_OPTION(dec, SRL_F_DECODER_DESTRUCTOR_OK);
-
     /* Only free decoder if not for reuse */
     if (!SRL_DEC_HAVE_OPTION(dec, SRL_F_REUSE_DECODER)) {
         srl_destroy_decoder(aTHX_ dec);
@@ -263,12 +279,14 @@ srl_decoder_destructor_hook(pTHX_ void *p)
 
 /* Logic shared by the various decoder entry points. */
 SRL_STATIC_INLINE void
-srl_decode_into_internal(pTHX_ srl_decoder_t *dec, SV *src, SV *header_into, SV *body_into, UV start_offset)
+srl_decode_into_internal(pTHX_ srl_decoder_t *origdec, SV *src, SV *header_into, SV *body_into, UV start_offset)
 {
-    assert(dec != NULL);
+    srl_decoder_t *dec;
+
+    assert(origdec != NULL);
     if (SvUTF8(src))
         sv_utf8_downgrade(src, 0);
-    srl_begin_decoding(aTHX_ dec, src, start_offset);
+    dec = srl_begin_decoding(aTHX_ origdec, src, start_offset);
     srl_read_header(aTHX_ dec, header_into);
     SRL_UPDATE_BODY_POS(dec);
     if (SRL_DEC_HAVE_OPTION(dec, SRL_F_DECODER_DECOMPRESS_SNAPPY)) {
@@ -288,6 +306,7 @@ srl_decode_into_internal(pTHX_ srl_decoder_t *dec, SV *src, SV *header_into, SV 
         /* all decl's above here, or we break C89 compilers */
 
         dec->bytes_consumed= compressed_packet_len + (dec->pos - dec->buf_start);
+        origdec->bytes_consumed = dec->bytes_consumed;
 
         header_len = csnappy_get_uncompressed_length(
                             (char *)dec->pos,
@@ -331,8 +350,10 @@ srl_decode_into_internal(pTHX_ srl_decoder_t *dec, SV *src, SV *header_into, SV 
 
     /* If we aren't reading from a decompressed buffer we have to remember the number
      * of bytes used for the user to query. */
-    if (dec->bytes_consumed == 0)
+    if (dec->bytes_consumed == 0) {
         dec->bytes_consumed = dec->pos - dec->buf_start;
+        origdec->bytes_consumed = dec->bytes_consumed;
+    }
 
     if (SRL_DEC_HAVE_OPTION(dec, SRL_F_DECODER_DESTRUCTIVE_INCREMENTAL)) {
         STRLEN len;
@@ -346,12 +367,13 @@ srl_decode_into_internal(pTHX_ srl_decoder_t *dec, SV *src, SV *header_into, SV 
 
 /* This is the main routine to deserialize just the header of a document. */
 SV *
-srl_decode_header_into(pTHX_ srl_decoder_t *dec, SV *src, SV* header_into, UV start_offset)
+srl_decode_header_into(pTHX_ srl_decoder_t *origdec, SV *src, SV* header_into, UV start_offset)
 {
-    assert(dec != NULL);
+    srl_decoder_t *dec;
+    assert(origdec != NULL);
     if (SvUTF8(src))
         sv_utf8_downgrade(src, 0);
-    srl_begin_decoding(aTHX_ dec, src, start_offset);
+    dec = srl_begin_decoding(aTHX_ origdec, src, start_offset);
     if (header_into == NULL)
         header_into = sv_newmortal();
     srl_read_header(aTHX_ dec, header_into);
@@ -410,20 +432,30 @@ srl_clear_decoder_body_state(pTHX_ srl_decoder_t *dec)
     dec->recursion_depth = 0;
 }
 
-SRL_STATIC_INLINE void
+SRL_STATIC_INLINE srl_decoder_t *
 srl_begin_decoding(pTHX_ srl_decoder_t *dec, SV *src, UV start_offset)
 {
     STRLEN len;
     unsigned char *tmp;
 
-    /* Assert that we did not push a destructor before */
-    assert(!SRL_DEC_HAVE_OPTION(dec, SRL_F_DECODER_DESTRUCTOR_OK));
-    /* Push destructor, set destructor-is-pushed flag */
-    SRL_DEC_SET_OPTION(dec, SRL_F_DECODER_DESTRUCTOR_OK);
+    /* Check whether decoder is in use and create a new one on the
+     * fly if necessary. Should only happen in edge cases such as
+     * a THAW hook calling back into the same decoder. */
+    if (SRL_DEC_HAVE_OPTION(dec, SRL_F_DECODER_DIRTY)) {
+        srl_decoder_t * const proto = dec;
+        dec = srl_build_decoder_struct_alike(aTHX_ proto);
+        SRL_DEC_UNSET_OPTION(dec, SRL_F_REUSE_DECODER);
+    }
+
+    /* Needs to be before setting DIRTY because DIRTY is volatile. */
+    SRL_DEC_RESET_VOLATILE_FLAGS(dec);
+
+    /* Set to being in use. */;
+    SRL_DEC_SET_OPTION(dec, SRL_F_DECODER_DIRTY);
+
     /* Register our structure for destruction on scope exit */
     SAVEDESTRUCTOR_X(&srl_decoder_destructor_hook, (void *)dec);
 
-    SRL_DEC_RESET_VOLATILE_FLAGS(dec);
     tmp = (unsigned char*)SvPV(src, len);
     if (expect_false( start_offset > len )) {
         SRL_ERROR("Start offset is beyond input string length");
@@ -433,6 +465,8 @@ srl_begin_decoding(pTHX_ srl_decoder_t *dec, SV *src, UV start_offset)
     dec->buf_len= len - start_offset;
     SRL_SET_BODY_POS(dec, dec->buf_start);
     dec->bytes_consumed = 0;
+
+    return dec;
 }
 
 SRL_STATIC_INLINE void
