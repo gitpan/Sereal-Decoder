@@ -284,8 +284,6 @@ srl_decode_into_internal(pTHX_ srl_decoder_t *origdec, SV *src, SV *header_into,
     srl_decoder_t *dec;
 
     assert(origdec != NULL);
-    if (SvUTF8(src))
-        sv_utf8_downgrade(src, 0);
     dec = srl_begin_decoding(aTHX_ origdec, src, start_offset);
     srl_read_header(aTHX_ dec, header_into);
     SRL_UPDATE_BODY_POS(dec);
@@ -371,8 +369,6 @@ srl_decode_header_into(pTHX_ srl_decoder_t *origdec, SV *src, SV* header_into, U
 {
     srl_decoder_t *dec;
     assert(origdec != NULL);
-    if (SvUTF8(src))
-        sv_utf8_downgrade(src, 0);
     dec = srl_begin_decoding(aTHX_ origdec, src, start_offset);
     if (header_into == NULL)
         header_into = sv_newmortal();
@@ -455,6 +451,16 @@ srl_begin_decoding(pTHX_ srl_decoder_t *dec, SV *src, UV start_offset)
 
     /* Register our structure for destruction on scope exit */
     SAVEDESTRUCTOR_X(&srl_decoder_destructor_hook, (void *)dec);
+
+    if (SvUTF8(src)) {
+        /* If we are being asked to decode a utf8-on string then we
+         * make a mortal copy, and then try to downgrade the copy.
+         * The downgrade will croak if it cannot successfully downgrade
+         * the buffer. If it is sucessful then decode the downgraded
+         * copy. */
+        src= sv_mortalcopy(src);
+        sv_utf8_downgrade(src, 0);
+    }
 
     tmp = (unsigned char*)SvPV(src, len);
     if (expect_false( start_offset > len )) {
@@ -969,13 +975,37 @@ srl_read_refn(pTHX_ srl_decoder_t *dec, SV* into)
 {
     SV *referent;
     ASSERT_BUF_SPACE(dec, 1, " while reading REFN referent");
-    referent= newSV(SVt_NULL);
-
+    U8 tag= *(dec->pos); /* Look ahead for special vars. */
+    if (tag == SRL_HDR_TRUE) {
+        dec->pos++;
+        referent= &PL_sv_yes;
+    }
+    else if (tag == SRL_HDR_FALSE) {
+        dec->pos++;
+        referent= &PL_sv_no;
+    }
+    /*
+     * We cant do the below, as we have use SRL_HDR_UNDEF also
+     * to represent "any SV which is undef". We need a different
+     * tag for true perl undef.
+     *
+     */
+    /*
+    else if (tag == SRL_HDR_UNDEF) {
+        dec->pos++;
+        referent= &PL_sv_undef;
+    }
+    */
+    else {
+        referent= newSV(SVt_NULL);
+        SvTEMP_off(referent);
+        tag = 0;
+    }
     SRL_ASSERT_TYPE_FOR_RV(into);
-    SvTEMP_off(referent);
     SvRV_set(into, referent);
     SvROK_on(into);
-    srl_read_single_value(aTHX_ dec, referent);
+    if (!tag)
+        srl_read_single_value(aTHX_ dec, referent);
 }
 
 SRL_STATIC_INLINE void

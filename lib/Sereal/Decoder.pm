@@ -5,15 +5,18 @@ use warnings;
 use Carp qw/croak/;
 use XSLoader;
 
-our $VERSION = '2.06'; # Don't forget to update the TestCompat set for testing against installed encoders!
+our $VERSION = '2.07_01'; # Don't forget to update the TestCompat set for testing against installed encoders!
 
 # not for public consumption, just for testing.
 (my $num_version = $VERSION) =~ s/_//;
-my $TestCompat = [ map sprintf("%.2f", $_/100), reverse( 200 .. int($num_version * 100) ) ]; # compat with 2.00 to ...
+my $TestCompat = [ map sprintf("%.2f", $_/100), reverse( 207 .. int($num_version * 100) ) ]; # compat with 2.07 to ...
 sub _test_compat {return(@$TestCompat, $VERSION)}
 
 use Exporter 'import';
-our @EXPORT_OK = qw(decode_sereal looks_like_sereal decode_sereal_with_header_data);
+our @EXPORT_OK = qw(
+    decode_sereal looks_like_sereal decode_sereal_with_header_data
+    sereal_decode_with_object sereal_decode_with_header_with_object
+);
 our %EXPORT_TAGS = (all => \@EXPORT_OK);
 # export by default if run from command line
 our @EXPORT = ((caller())[1] eq '-e' ? @EXPORT_OK : ());
@@ -34,7 +37,8 @@ Sereal::Decoder - Fast, compact, powerful binary deserialization
 
 =head1 SYNOPSIS
 
-  use Sereal::Decoder qw(decode_sereal looks_like_sereal);
+  use Sereal::Decoder
+    qw(decode_sereal sereal_decode_with_object looks_like_sereal);
   
   my $decoder = Sereal::Decoder->new({...options...});
   
@@ -44,7 +48,11 @@ Sereal::Decoder - Fast, compact, powerful binary deserialization
   # or if you don't have references to the top level structure, this works, too:
   $structure = $decoder->decode($blob);
   
-  # alternatively functional interface:
+  # alternatively functional interface: (See Sereal::Performance)
+  sereal_decode_with_object($decoder, $blob, $structure);
+  $structure = sereal_decode_with_object($decoder, $blob);
+
+  # much slower functional interface with no persistent objects:
   decode_sereal($blob, {... options ...}, $structure);
   $structure = decode_sereal($blob, {... options ...});
   
@@ -210,6 +218,19 @@ For reference, sereal's magic string is a four byte string C<=srl>.
 
 =head1 EXPORTABLE FUNCTIONS
 
+=head2 sereal_decode_with_object
+
+The functional interface that is equivalent to using C<decode>.  Takes a
+decoder object reference as first argument, followed by a byte string
+to deserialize.  Optionally takes a third parameter, which is the output
+scalar to write to. See the documentation for C<decode> above for details.
+
+This functional interface is marginally faster than the OO interface
+since it avoids method resolution overhead and, on sufficiently modern
+Perl versions, can usually avoid subroutine call overhead. See
+L<Sereal::Performance> for a discussion on how to tune Sereal for maximum
+performance if you need to.
+
 =head2 decode_sereal
 
 The functional interface that is equivalent to using C<new> and C<decode>.
@@ -218,7 +239,7 @@ by a hash reference of options (see documentation for C<new()>). Finally,
 C<decode_sereal> supports a third parameter, which is the output scalar
 to write to. See the documentation for C<decode> above for details.
 
-The functional interface is marginally slower than the OO interface since
+This functional interface is significantly slower than the OO interface since
 it cannot reuse the decoder object.
 
 =head2 looks_like_sereal
@@ -263,8 +284,8 @@ the C<FREEZE/THAW> mechanism, please refer to L<Sereal::Encoder>.
 
 =head1 PERFORMANCE
 
-Please refer to the PERFORMANCE documention section in the L<Sereal::Encoder>
-module that has more detailed information about Sereal performance and
+Please refer to the L<Sereal::Performance> document
+that has more detailed information about Sereal performance and
 tuning thereof.
 
 =head1 THREAD-SAFETY
@@ -305,6 +326,8 @@ Tim Bunce
 Daniel Dragan E<lt>bulkdd@cpan.orgE<gt> (Windows support and bugfixes)
 
 Zefram
+
+Borislav Nikolov
 
 Some inspiration and code was taken from Marc Lehmann's
 excellent JSON::XS module due to obvious overlap in
