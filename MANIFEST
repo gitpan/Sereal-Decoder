@@ -9,11 +9,9 @@ Changes
 const-c.inc
 const-xs.inc
 Decoder.xs
-Decoder.xs.orig
 inc/Devel/CheckLib.pm
 inc/Sereal/BuildTools.pm
 lib/Sereal/Decoder.pm
-lib/Sereal/Decoder.pm.orig
 lib/Sereal/Decoder/Constants.pm
 lib/Sereal/Performance.pm
 Makefile.PL
@@ -55,5 +53,4 @@ t/lib/Sereal/BulkTest.pm
 t/lib/Sereal/TestSet.pm
 typemap
 xt/900_rand.t
-META.yml                                 Module YAML meta-data (added by MakeMaker)
-META.json                                Module JSON meta-data (added by MakeMaker)
+META.yml                                 Module meta-data (added by MakeMaker)
