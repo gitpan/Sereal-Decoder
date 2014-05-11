@@ -98,12 +98,13 @@ void srl_decoder_destructor_hook(pTHX_ void *p);                    /* destructo
 SRL_STATIC_INLINE srl_decoder_t *srl_begin_decoding(pTHX_ srl_decoder_t *dec, SV *src, UV start_offset);
 SRL_STATIC_INLINE void srl_read_header(pTHX_ srl_decoder_t *dec, SV *header_user_data); /* read/validate header */
 SRL_STATIC_INLINE void srl_read_single_value(pTHX_ srl_decoder_t *dec, SV* into);   /* main recursive dump routine */
+SRL_STATIC_INLINE void srl_read_single_value_into_container(pTHX_ srl_decoder_t *dec,
+        SV** container);   /* wrapper for main recursive dump routine for handling aliasing  */
 SRL_STATIC_INLINE void srl_finalize_structure(pTHX_ srl_decoder_t *dec);             /* optional finalize structure logic */
 SRL_STATIC_INLINE void srl_clear_decoder(pTHX_ srl_decoder_t *dec);                 /* clean up decoder after a dump */
 SRL_STATIC_INLINE void srl_clear_decoder_body_state(pTHX_ srl_decoder_t *dec);      /* clean up after each document body */
 
 /* the internal routines to handle each kind of object we have to deserialize */
-SRL_STATIC_INLINE SV *srl_read_alias(pTHX_ srl_decoder_t *dec);
 SRL_STATIC_INLINE void srl_read_copy(pTHX_ srl_decoder_t *dec, SV* into);
 
 SRL_STATIC_INLINE void srl_read_hash(pTHX_ srl_decoder_t *dec, SV* into, U8 tag);
@@ -212,6 +213,51 @@ srl_build_decoder_struct(pTHX_ HV *opt)
 
         if ( (svp = hv_fetchs(opt, "incremental", 0)) && SvTRUE(*svp))
             SRL_DEC_SET_OPTION(dec,SRL_F_DECODER_DESTRUCTIVE_INCREMENTAL);
+
+        /* see if they want us to alias varints, value is an unsigned integer.
+         * setting it to a true value smaller than 16 is the same as
+         * using the "alias_smallint" option. Setting it to a true value larger
+         * than 15 enables aliasing of smallints, and implies "alias_smallint" as
+         * well. */
+        if ( (svp = hv_fetchs(opt, "alias_varint_under", 0)) && SvTRUE(*svp)) {
+            /* if they use this then they automatically imply doing it for
+             * smallint as well */
+            SRL_DEC_SET_OPTION(dec,SRL_F_DECODER_ALIAS_SMALLINT);
+            SRL_DEC_SET_OPTION(dec,SRL_F_DECODER_ALIAS_VARINT);
+            if (SvUV(*svp) < 16) {
+                /* too small, just enable for SMALLINT (POS/NEG)*/
+                dec->alias_varint_under= 16;
+            } else {
+                /* larger than POS/NEG range, also alias some VARINTs */
+                /* anything smaller than this number will be aliased */
+                dec->alias_varint_under= SvUV(*svp);
+            }
+            /* create the alias cache */
+            dec->alias_cache= newAV();
+            /* extend it to the right size 16 for NEG,
+             * dec->alias_varint_under is at least 15, and 1 more for zero,
+             * so we allocate enough for POS/NEG as well as for the additional varints*/
+            av_extend(dec->alias_cache, 16 + dec->alias_varint_under);
+            AvFILLp(dec->alias_cache)= 16 + dec->alias_varint_under - 1; /* remove 1 as this is $#ary */
+        }
+
+        /* they can enable aliasing of SMALLINT's alone */
+        if ( !SRL_DEC_HAVE_OPTION(dec,SRL_F_DECODER_ALIAS_SMALLINT) &&
+             (svp = hv_fetchs(opt, "alias_smallint", 0)) && SvTRUE(*svp)
+        ) {
+            /* set the flag */
+            SRL_DEC_SET_OPTION(dec,SRL_F_DECODER_ALIAS_SMALLINT);
+            /* create the alias cache */
+            dec->alias_cache= newAV();
+            /* extend it to the right size of 32 items */
+            av_extend(dec->alias_cache,32);
+            AvFILLp(dec->alias_cache)= 31; /* $#ary == 32 */
+        }
+        /* check if they want us to use &PL_sv_undef for SRL_HEADER_UNDEF
+         * even if this might break referential integrity. */
+        if ( (svp = hv_fetchs(opt, "use_undef", 0)) && SvTRUE(*svp))
+            SRL_DEC_SET_OPTION(dec,SRL_F_DECODER_USE_UNDEF);
+
     }
 
     return dec;
@@ -229,6 +275,10 @@ srl_build_decoder_struct_alike(pTHX_ srl_decoder_t *proto)
     dec->max_recursion_depth = proto->max_recursion_depth;
     dec->max_num_hash_entries = proto->max_num_hash_entries;
 
+    if (dec->alias_cache) {
+        dec->alias_cache = proto->alias_cache;
+        SvREFCNT_inc(dec->alias_cache);
+    }
     dec->flags = proto->flags;
     SRL_DEC_RESET_VOLATILE_FLAGS(dec);
 
@@ -250,6 +300,8 @@ srl_destroy_decoder(pTHX_ srl_decoder_t *dec)
     }
     if (dec->ref_thawhash)
         PTABLE_free(dec->ref_thawhash);
+    if (dec->alias_cache)
+        SvREFCNT_dec(dec->alias_cache);
     Safefree(dec);
 }
 
@@ -841,19 +893,16 @@ srl_read_array(pTHX_ srl_decoder_t *dec, SV *into, U8 tag) {
 
         ASSERT_BUF_SPACE(dec,len,"while reading array contents, insuffienct remaining tags for specified array size");
 
-        /* we cheat and store undef in the array - we will overwrite it later */
-        av_store((AV*)into, len-1, &PL_sv_undef);
+        /* make sure the array has room */
+        av_extend((AV*)into, len-1);
+        /* set the size */
+        AvFILLp(into)= len - 1;
+
         av_array= AvARRAY((AV*)into);
         av_end= av_array + len;
 
-        for ( ; av_array != av_end ; av_array++) {
-            if ( expect_false( *dec->pos == SRL_HDR_ALIAS ) ) {
-                dec->pos++;
-                *av_array= srl_read_alias(aTHX_ dec);
-            } else {
-                *av_array= newSV_type(SVt_NULL);
-                srl_read_single_value(aTHX_ dec, *av_array);
-            }
+        for ( ; av_array < av_end ; av_array++) {
+            srl_read_single_value_into_container(aTHX_ dec, av_array);
         }
     }
 }
@@ -959,12 +1008,7 @@ srl_read_hash(pTHX_ srl_decoder_t *dec, SV* into, U8 tag) {
         if (expect_false( !fetched_sv )) {
             SRL_ERROR_PANIC(dec,"failed to hv_store");
         }
-        if (expect_false( *dec->pos == SRL_HDR_ALIAS )) {
-            dec->pos++;
-            *fetched_sv= srl_read_alias(aTHX_ dec);
-        } else {
-            srl_read_single_value(aTHX_ dec, *fetched_sv);
-        }
+        srl_read_single_value_into_container(aTHX_ dec, fetched_sv);
     }
 }
 
@@ -984,17 +1028,17 @@ srl_read_refn(pTHX_ srl_decoder_t *dec, SV* into)
         referent= &PL_sv_no;
     }
     /*
-     * We cant do the below, as we have use SRL_HDR_UNDEF also
-     * to represent "any SV which is undef". We need a different
-     * tag for true perl undef.
+     * Note the below is guarded by an option as we have use SRL_HDR_UNDEF
+     * also to represent "any SV which is undef", and using to represent
+     * true PL_sv_undef will break things.
+     *
+     * We need a new, different tag for true perl undef.
      *
      */
-    /*
-    else if (tag == SRL_HDR_UNDEF) {
+    else if (SRL_DEC_HAVE_OPTION(dec,SRL_F_DECODER_USE_UNDEF) && tag == SRL_HDR_UNDEF) {
         dec->pos++;
         referent= &PL_sv_undef;
     }
-    */
     else {
         referent= newSV(SVt_NULL);
         SvTEMP_off(referent);
@@ -1468,16 +1512,6 @@ srl_read_extend(pTHX_ srl_decoder_t *dec, SV* into)
     return into;
 }
 
-/* these are all special */
-
-SRL_STATIC_INLINE SV *
-srl_read_alias(pTHX_ srl_decoder_t *dec)
-{
-    UV item= srl_read_varint_uv_offset(aTHX_ dec," while reading ALIAS tag");
-    SV *referent= srl_fetch_item(aTHX_ dec, item, "ALIAS");
-    return SvREFCNT_inc(referent);
-}
-
 SRL_STATIC_INLINE void
 srl_read_copy(pTHX_ srl_decoder_t *dec, SV* into)
 {
@@ -1493,6 +1527,98 @@ srl_read_copy(pTHX_ srl_decoder_t *dec, SV* into)
     srl_read_single_value(aTHX_ dec, into);
     dec->pos= dec->save_pos;
     dec->save_pos= 0;
+}
+
+
+SRL_STATIC_INLINE void
+srl_read_single_value_into_container(pTHX_ srl_decoder_t *dec, SV** container)
+{
+    SV *alias;
+    U32 item;
+    IV iv;
+    U8 tag = *dec->pos;
+
+    /* it helps to think of this somewhat like a switch, except it does
+     * more complicated checks than a single integer expression lookup */
+
+    if (expect_false( tag == SRL_HDR_ALIAS )) {
+        dec->pos++;
+        item= srl_read_varint_uv_offset(aTHX_ dec," while reading ALIAS tag");
+        alias= srl_fetch_item(aTHX_ dec, item, "ALIAS");
+        /* jump forward to the shared aliasing logic */
+        goto do_refcnt_inc_alias;
+    }
+    else
+    if (
+        SRL_DEC_HAVE_OPTION(dec, SRL_F_DECODER_ALIAS_CHECK_FLAGS)
+    ) {
+
+        if (
+            SRL_DEC_HAVE_OPTION(dec,SRL_F_DECODER_USE_UNDEF) &&
+            tag == SRL_HDR_UNDEF
+        ) {
+            dec->pos++;
+            alias= &PL_sv_undef;
+            /* jump forward to the shared aliasing logic */
+            goto do_alias;
+        }
+        else
+        if (
+            SRL_DEC_HAVE_OPTION(dec,SRL_F_DECODER_ALIAS_SMALLINT) &&
+            tag <= SRL_HDR_NEG_HIGH
+        ) {
+            dec->pos++;
+            if ( tag <= SRL_HDR_POS_HIGH ) {
+                iv= tag;
+            } else {
+                /* must be a SRL_HDR_NEG tag, subtract 32 to get real value */
+                iv= tag - 32;
+            }
+            /* jump forward to the shared iv caching logic */
+            goto do_aliased_iv;
+        }
+        else
+        if (
+            SRL_DEC_HAVE_OPTION(dec,SRL_F_DECODER_ALIAS_VARINT) &&
+            tag == SRL_HDR_VARINT
+        ) {
+            U8 *tag_start= dec->pos;
+            dec->pos++;
+            item= srl_read_varint_uv(aTHX_ dec);
+            if ( item < dec->alias_varint_under ) {
+                iv= (IV)item;
+
+              do_aliased_iv:
+                item = iv + 16; /* we always cover from -16 up so we add 16 */
+                if (!AvARRAY(dec->alias_cache)[item] || AvARRAY(dec->alias_cache)[item] == &PL_sv_undef) {
+                    alias= newSViv(iv);
+                    /* mark it as readonly so people dont try to modify it */
+                    SvREADONLY_on(alias);
+                    /* store it in the alias_cache array */
+                    AvARRAY(dec->alias_cache)[item]= alias;
+                } else {
+                    alias= AvARRAY(dec->alias_cache)[item];
+                }
+
+              do_refcnt_inc_alias:
+                SvREFCNT_inc(alias);
+
+              do_alias:
+                if (*container && *container != &PL_sv_undef)
+                    SvREFCNT_dec(*container);
+                *container= alias;
+                return;
+            }
+            else {
+                /* reset parse pointer and fallthrough */
+                dec->pos= tag_start;
+            }
+        }
+    }
+    if (!*container || *container == &PL_sv_undef)
+        *container = newSV_type(SVt_NULL);
+    srl_read_single_value(aTHX_ dec, *container);
+    return;
 }
 
 /****************************************************************************
