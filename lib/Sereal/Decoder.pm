@@ -5,12 +5,12 @@ use warnings;
 use Carp qw/croak/;
 use XSLoader;
 
-our $VERSION = '2.12'; # Don't forget to update the TestCompat set for testing against installed encoders!
+our $VERSION = '3.000_001'; # Don't forget to update the TestCompat set for testing against installed encoders!
 our $XS_VERSION = $VERSION; $VERSION= eval $VERSION;
 
 # not for public consumption, just for testing.
 (my $num_version = $VERSION) =~ s/_//;
-my $TestCompat = [ map sprintf("%.2f", $_/100), reverse( 207 .. int($num_version * 100) ) ]; # compat with 2.07 to ...
+my $TestCompat = [ map sprintf("%.2f", $_/100), reverse( 300 .. int($num_version * 100) ) ]; # compat with 3.00 to ...
 sub _test_compat {return(@$TestCompat, $VERSION)}
 
 use Exporter 'import';
@@ -71,10 +71,10 @@ Its sister module L<Sereal::Encoder> implements an encoder for this format.
 The two are released separately to allow for independent and safer upgrading.
 
 The Sereal protocol versions that are compatible with this decoder implementation
-are currently protocol versions 1 and 2. As it stands, it will refuse to attempt to
+are currently protocol versions 1, 2, and 3. As it stands, it will refuse to attempt to
 decode future versions of the protocol, but if necessary there is likely
 going to be an option to decode the parts of the input that are compatible
-with version 2 of the protocol. The protocol was designed to allow for this.
+with version 3 of the protocol. The protocol was designed to allow for this.
 
 The protocol specification and many other bits of documentation
 can be found in the github repository. Right now, the specification is at
@@ -156,8 +156,8 @@ If set to a true value then C<Sereal::Decoder> will share integers from
 aliases to a common SV.
 
 The result of this may be significant space savings in data structures with
-many integers in the desire range. The cost is more memory used by the decoder
-and a very modest speed penalty when deserializing.
+many integers in the specified range. The cost is more memory used by the
+decoder and a very modest speed penalty when deserializing.
 
 Note this option changes the structure of the dumped data. Use with caution.
 
@@ -210,6 +210,44 @@ In other words,
 This is an unfortunate side-effect of perls standard copy semantics of
 assignment. Possibly one day we will have an alternative to this.
 
+=head2 decode_with_header
+
+Given a byte string of Sereal data, the C<decode_with_header> call deserializes
+that data structure as C<decode> would do, however it also decodes the optional
+user data structure that can be embedded into a Sereal document, inside the
+header  (see L<Sereal::Encoder::encode>).
+
+It accepts an optional second parameter, which is a scalar to write the body
+to, and an optional third parameter, which is a scalar to write the header to.
+
+Regardless of the number of parameters received, C<decode_with_header> returns
+an ArrayRef containing the deserialized body, and the deserialized header, in
+this order.
+
+See C<decode> for the subtle difference between the one, two and three
+parameters versions.
+
+If there is no header in a Sereal document, corresponding variable or return
+value will be set to undef.
+
+=head2 decode_only_header
+
+Given a byte string of Sereal data, the C<decode_only_header> deserializes
+only the optional user data structure that can be embedded into a Sereal
+document, inside the header (see L<Sereal::Encoder::encode>).
+
+It accepts an optional second parameter, which is a scalar
+to write the header to.
+
+Regardless of the number of parameters received, C<decode_only_header> returns
+the resulting data structure.
+
+See C<decode> for the subtle difference between the one and two parameters
+versions.
+
+If there is no header in a Sereal document, corresponding variable or return
+value will be set to undef.
+
 =head2 decode_with_offset
 
 Same as the C<decode> method, except as second parameter, you must
@@ -217,14 +255,28 @@ pass an integer offset into the input string, at which the decoding is
 to start. The optional "pass-in" style scalar (see C<decode> above)
 is relegated to being the third parameter.
 
+=head2 decode_only_header_with_offset
+
+Same as the C<decode_only_header> method, except as second parameter, you must
+pass an integer offset into the input string, at which the decoding is
+to start. The optional "pass-in" style scalar (see C<decode_only_header> above)
+is relegated to being the third parameter.
+
+=head2 decode_with_header_and_offset
+
+Same as the C<decode_with_header> method, except as second parameter, you must
+pass an integer offset into the input string, at which the decoding is
+to start. The optional "pass-in" style scalars (see C<decode_with_header> above)
+are relegated to being the third and fourth parameters.
+
 =head2 bytes_consumed
 
-After using the C<decode> method, C<bytes_consumed> can return the
-number of bytes of the input string that were actually consumed by
-the decoder. That is, if you append random garbage to a valid
-Sereal document, C<decode> will happily decode the data and ignore the
-garbage. If that is an error in your use case, you can use C<bytes_consumed>
-to catch it.
+After using the various C<decode> methods documented previously,
+C<bytes_consumed> can return the number of bytes B<from the body> of the input
+string that were actually consumed by the decoder. That is, if you append
+random garbage to a valid Sereal document, C<decode> will happily decode the
+data and ignore the garbage. If that is an error in your use case, you can use
+C<bytes_consumed> to catch it.
 
   my $out = $decoder->decode($sereal_string);
   if (length($sereal_string) != $decoder->bytes_consumed) {
@@ -248,6 +300,13 @@ is concatenated into the same string (code not very robust...):
     }
   };
 
+As mentioned, only the bytes consumed from the body are considered. So the
+following example is correct, as only the header is deserialized:
+
+  my $header = $decoder->decode_only_header($sereal_string);
+  my $count = $decoder->bytes_consumed;
+  # $count is 0
+
 =head2 looks_like_sereal
 
 Given a string (or undef), checks whether it looks like it starts
@@ -261,10 +320,24 @@ For reference, sereal's magic string is a four byte string C<=srl>.
 
 =head2 sereal_decode_with_object
 
-The functional interface that is equivalent to using C<decode>.  Takes a
-decoder object reference as first argument, followed by a byte string
+The functional interface that is equivalent to using C<decode>. Takes a
+decoder object reference as first parameter, followed by a byte string
 to deserialize.  Optionally takes a third parameter, which is the output
 scalar to write to. See the documentation for C<decode> above for details.
+
+This functional interface is marginally faster than the OO interface
+since it avoids method resolution overhead and, on sufficiently modern
+Perl versions, can usually avoid subroutine call overhead. See
+L<Sereal::Performance> for a discussion on how to tune Sereal for maximum
+performance if you need to.
+
+=head2 sereal_decode_with_header_with_object
+
+The functional interface that is equivalent to using C<decode_with_header>.
+Takes a decoder object reference as first parameter, followed by a byte string
+to deserialize. Optionally takes third and fourth parameters, which are
+the output scalars to write to. See the documentation for C<decode_with_header>
+above for details.
 
 This functional interface is marginally faster than the OO interface
 since it avoids method resolution overhead and, on sufficiently modern
@@ -279,6 +352,17 @@ Expects a byte string to deserialize as first argument, optionally followed
 by a hash reference of options (see documentation for C<new()>). Finally,
 C<decode_sereal> supports a third parameter, which is the output scalar
 to write to. See the documentation for C<decode> above for details.
+
+This functional interface is significantly slower than the OO interface since
+it cannot reuse the decoder object.
+
+=head2 decode_sereal_with_header_data
+
+The functional interface that is equivalent to using C<new> and C<decode_with_header>.
+Expects a byte string to deserialize as first argument, optionally followed
+by a hash reference of options (see documentation for C<new()>). Finally,
+C<decode_sereal> supports third and fourth parameters, which are the output scalars
+to write to. See the documentation for C<decode_with_header> above for details.
 
 This functional interface is significantly slower than the OO interface since
 it cannot reuse the decoder object.
@@ -369,6 +453,8 @@ Daniel Dragan E<lt>bulkdd@cpan.orgE<gt> (Windows support and bugfixes)
 Zefram
 
 Borislav Nikolov
+
+Ivan Kruglov E<lt>ivan.kruglov@yahoo.comE<gt>
 
 Some inspiration and code was taken from Marc Lehmann's
 excellent JSON::XS module due to obvious overlap in

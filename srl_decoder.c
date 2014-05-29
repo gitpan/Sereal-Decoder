@@ -52,6 +52,7 @@ extern "C" {
 #include "srl_protocol.h"
 
 #include "snappy/csnappy_decompress.c"
+#include "miniz.h"
 
 /* 5.8.8 and earlier have a nasty bug in their handling of overloading:
  * The overload-flag is set on the referer of the blessed object instead of
@@ -103,6 +104,10 @@ SRL_STATIC_INLINE void srl_read_single_value_into_container(pTHX_ srl_decoder_t 
 SRL_STATIC_INLINE void srl_finalize_structure(pTHX_ srl_decoder_t *dec);             /* optional finalize structure logic */
 SRL_STATIC_INLINE void srl_clear_decoder(pTHX_ srl_decoder_t *dec);                 /* clean up decoder after a dump */
 SRL_STATIC_INLINE void srl_clear_decoder_body_state(pTHX_ srl_decoder_t *dec);      /* clean up after each document body */
+SRL_STATIC_INLINE void srl_realloc_empty_buffer(pTHX_ srl_decoder_t *dec, const STRLEN header_len, const STRLEN body_len);
+SRL_STATIC_INLINE void srl_decompress_body_snappy(pTHX_ srl_decoder_t *dec);
+SRL_STATIC_INLINE void srl_decompress_body_zlib(pTHX_ srl_decoder_t *dec);
+
 
 /* the internal routines to handle each kind of object we have to deserialize */
 SRL_STATIC_INLINE void srl_read_copy(pTHX_ srl_decoder_t *dec, SV* into);
@@ -195,6 +200,9 @@ srl_build_decoder_struct(pTHX_ HV *opt)
     if (opt != NULL) {
         if ( (svp = hv_fetchs(opt, "refuse_snappy", 0)) && SvTRUE(*svp))
             SRL_DEC_SET_OPTION(dec, SRL_F_DECODER_REFUSE_SNAPPY);
+
+        if ( (svp = hv_fetchs(opt, "refuse_zlib", 0)) && SvTRUE(*svp))
+            SRL_DEC_SET_OPTION(dec, SRL_F_DECODER_REFUSE_ZLIB);
 
         if ( (svp = hv_fetchs(opt, "refuse_objects", 0)) && SvTRUE(*svp))
             SRL_DEC_SET_OPTION(dec, SRL_F_DECODER_REFUSE_OBJECTS);
@@ -325,6 +333,113 @@ srl_decoder_destructor_hook(pTHX_ void *p)
     }
 }
 
+/* Creates a new buffer of size header_len+body_len+1 and swaps it
+ * into place of the current decoder's buffer. Sets decoder
+ * position to right after the header and makes the decoder state
+ * internally consistent.
+ * The buffer is owned by a mortal SV. */
+SRL_STATIC_INLINE void
+srl_realloc_empty_buffer(pTHX_ srl_decoder_t *dec,
+                         const STRLEN header_len,
+                         const STRLEN body_len)
+{
+    SV *buf_sv;
+    unsigned char *buf;
+
+    /* Let perl clean this up. Yes, it's not the most efficient thing
+     * ever, but it's just one mortal per full decompression, so not
+     * a bottle-neck. */
+    buf_sv = sv_2mortal( newSV(header_len + body_len + 1 ));
+    buf = (unsigned char *)SvPVX(buf_sv);
+
+    dec->buf_start = buf;
+    dec->pos = buf + header_len;
+    SRL_UPDATE_BODY_POS(dec);
+    dec->buf_end = dec->pos + body_len;
+    dec->buf_len = body_len + header_len;
+}
+
+/* Decompress a Snappy-compressed document body and put the resulting
+ * document body back in the place of the old compressed blob. */
+SRL_STATIC_INLINE void
+srl_decompress_body_snappy(pTHX_ srl_decoder_t *dec)
+{
+    uint32_t dest_len;
+    unsigned char *old_pos;
+    const ptrdiff_t sereal_header_len = dec->pos - dec->buf_start;
+    const STRLEN compressed_packet_len =
+        ( dec->proto_version_and_flags & SRL_PROTOCOL_ENCODING_MASK ) == SRL_PROTOCOL_ENCODING_SNAPPY_INCREMENTAL
+        ? (STRLEN)srl_read_varint_uv_length(aTHX_ dec, " while reading compressed packet size")
+        : (STRLEN)(dec->buf_end - dec->pos);
+    int decompress_ok;
+    int header_len;
+
+    /* All decl's above here, or we break C89 compilers */
+
+    dec->bytes_consumed= compressed_packet_len + (dec->pos - dec->buf_start);
+
+    header_len = csnappy_get_uncompressed_length(
+            (char *)dec->pos,
+            compressed_packet_len,
+            &dest_len
+            );
+    if (header_len == CSNAPPY_E_HEADER_BAD)
+        SRL_ERROR("Invalid Snappy header in Snappy-compressed Sereal packet");
+
+    old_pos = dec->pos;
+
+    /* Allocate output buffer and swap it into place within the decoder. */
+    srl_realloc_empty_buffer(aTHX_ dec, sereal_header_len, dest_len);
+
+    decompress_ok = csnappy_decompress_noheader((char *)(old_pos + header_len),
+            compressed_packet_len - header_len,
+            (char *)dec->pos,
+            &dest_len);
+    if (expect_false( decompress_ok != 0 ))
+    {
+        SRL_ERRORf1("Snappy decompression of Sereal packet payload failed with error %i!", decompress_ok);
+    }
+}
+
+/* Decompress a zlib-compressed document body and put the resulting
+ * document body back in the place of the old compressed blob. */
+SRL_STATIC_INLINE void
+srl_decompress_body_zlib(pTHX_ srl_decoder_t *dec)
+{
+    unsigned char *old_pos;
+    const ptrdiff_t sereal_header_len = dec->pos - dec->buf_start;
+    const STRLEN uncompressed_packet_len = (STRLEN)srl_read_varint_uv(aTHX_ dec);
+    const STRLEN compressed_packet_len =
+        (STRLEN)srl_read_varint_uv_length(aTHX_ dec, " while reading compressed packet size");
+    int decompress_ok;
+    int header_len;
+    mz_ulong tmp;
+
+    /* All decl's above here, or we break C89 compilers */
+
+    dec->bytes_consumed= compressed_packet_len + (dec->pos - dec->buf_start);
+
+    old_pos = dec->pos;
+
+
+    /* Allocate output buffer and swap it into place within the decoder. */
+    srl_realloc_empty_buffer(aTHX_ dec, sereal_header_len, uncompressed_packet_len);
+    tmp = uncompressed_packet_len;
+    decompress_ok = mz_uncompress(
+        (unsigned char *)dec->pos,
+        &tmp,
+        (const unsigned char *)old_pos,
+        compressed_packet_len
+    );
+
+    if (expect_false( decompress_ok != Z_OK ))
+    {
+        SRL_ERRORf1("ZLIB decompression of Sereal packet payload failed with error %i!", decompress_ok);
+    }
+}
+
+
+
 /* Logic shared by the various decoder entry points. */
 SRL_STATIC_INLINE void
 srl_decode_into_internal(pTHX_ srl_decoder_t *origdec, SV *src, SV *header_into, SV *body_into, UV start_offset)
@@ -335,57 +450,12 @@ srl_decode_into_internal(pTHX_ srl_decoder_t *origdec, SV *src, SV *header_into,
     dec = srl_begin_decoding(aTHX_ origdec, src, start_offset);
     srl_read_header(aTHX_ dec, header_into);
     SRL_UPDATE_BODY_POS(dec);
-    if (SRL_DEC_HAVE_OPTION(dec, SRL_F_DECODER_DECOMPRESS_SNAPPY)) {
-        /* uncompress */
-        uint32_t dest_len;
-        SV *buf_sv;
-        unsigned char *buf;
-        unsigned char *old_pos;
-        const ptrdiff_t sereal_header_len = dec->pos - dec->buf_start;
-        const STRLEN compressed_packet_len =
-                ( dec->proto_version_and_flags & SRL_PROTOCOL_ENCODING_MASK ) == SRL_PROTOCOL_ENCODING_SNAPPY_INCREMENTAL
-                ? (STRLEN)srl_read_varint_uv_length(aTHX_ dec, " while reading compressed packet size")
-                : (STRLEN)(dec->buf_end - dec->pos);
-        int decompress_ok;
-        int header_len;
-
-        /* all decl's above here, or we break C89 compilers */
-
-        dec->bytes_consumed= compressed_packet_len + (dec->pos - dec->buf_start);
+    if (expect_false( SRL_DEC_HAVE_OPTION(dec, SRL_F_DECODER_DECOMPRESS_SNAPPY) )) {
+        srl_decompress_body_snappy(aTHX_ dec);
         origdec->bytes_consumed = dec->bytes_consumed;
-
-        header_len = csnappy_get_uncompressed_length(
-                            (char *)dec->pos,
-                            compressed_packet_len,
-                            &dest_len
-                         );
-        if (header_len == CSNAPPY_E_HEADER_BAD)
-            SRL_ERROR("Invalid Snappy header in Snappy-compressed Sereal packet");
-
-        /* Let perl clean this up. Yes, it's not the most efficient thing
-         * ever, but it's just one mortal per full decompression, so not
-         * a bottle-neck. */
-        buf_sv = sv_2mortal( newSV(sereal_header_len + dest_len + 1 ));
-        buf = (unsigned char *)SvPVX(buf_sv);
-
-        /* not necessary to copy the Sereal header! */
-        /* Copy(dec->buf_start, buf, sereal_header_len, unsigned char); */
-
-        old_pos = dec->pos;
-        dec->buf_start = buf;
-        dec->pos = buf + sereal_header_len;
-        SRL_UPDATE_BODY_POS(dec);
-        dec->buf_end = dec->pos + dest_len;
-        dec->buf_len = dest_len + sereal_header_len;
-
-        decompress_ok = csnappy_decompress_noheader((char *)(old_pos + header_len),
-                                                    compressed_packet_len - header_len,
-                                                    (char *)dec->pos,
-                                                    &dest_len);
-        if (expect_false( decompress_ok != 0 ))
-        {
-            SRL_ERRORf1("Snappy decompression of Sereal packet payload failed with error %i!", decompress_ok);
-        }
+    } else if (expect_false( SRL_DEC_HAVE_OPTION(dec, SRL_F_DECODER_DECOMPRESS_ZLIB) )) {
+        srl_decompress_body_zlib(aTHX_ dec);
+        origdec->bytes_consumed = dec->bytes_consumed;
     }
 
     /* The actual document body deserialization: */
@@ -530,28 +600,43 @@ srl_read_header(pTHX_ srl_decoder_t *dec, SV *header_user_data)
 
     /* 4 byte magic string + version/flags + hdr len at least */
     ASSERT_BUF_SPACE(dec, 4 + 1 + 1," while reading header");
-    if (strnEQ((char*)dec->pos, SRL_MAGIC_STRING, 4)) {
+
+    if (!strnEQ((char*)dec->pos, SRL_MAGIC_STRING_HIGHBIT, SRL_MAGIC_STRLEN)
+        && !strnEQ((char*)dec->pos, SRL_MAGIC_STRING, SRL_MAGIC_STRLEN))
+    {
+        if (strnEQ((char*)dec->pos, SRL_MAGIC_STRING_HIGHBIT_UTF8, SRL_MAGIC_STRLEN_HIGHBIT_UTF8))
+            SRL_ERROR("Bad Sereal header: It seems your document was accidentally UTF-8 encoded");
+        else
+            SRL_ERROR("Bad Sereal header: Does not start with Sereal magic");
+    }
+    else {
         unsigned int proto_version;
+        U8 encoding_flags;
 
         dec->pos += 4;
         dec->proto_version_and_flags = *dec->pos++;
 
+        /* TODO eventually, we'll have to migrate to a cleaner
+         * "store actual protocol version in decoder" model as was done with
+         * the encoder. But until either a future v4 or if v3 acquires features
+         * outside the Sereal header, the current "store flag about being v1"
+         * mode is still good enough. */
         proto_version = dec->proto_version_and_flags & SRL_PROTOCOL_VERSION_MASK;
+        encoding_flags = dec->proto_version_and_flags & SRL_PROTOCOL_ENCODING_MASK;
+
         if (expect_false( proto_version == 1 ))
             SRL_DEC_SET_OPTION(dec, SRL_F_DECODER_PROTOCOL_V1); /* compat mode */
-        else if (expect_false( proto_version != 2 ))
+        else if (expect_false( proto_version > 3 || proto_version < 1 ))
             SRL_ERRORf1("Unsupported Sereal protocol version %u",
                     dec->proto_version_and_flags & SRL_PROTOCOL_VERSION_MASK);
 
-        if ((dec->proto_version_and_flags & SRL_PROTOCOL_ENCODING_MASK) == SRL_PROTOCOL_ENCODING_RAW) {
+        if (encoding_flags == SRL_PROTOCOL_ENCODING_RAW) {
             /* no op */
         }
         else
-        if (
-                ( dec->proto_version_and_flags & SRL_PROTOCOL_ENCODING_MASK ) == SRL_PROTOCOL_ENCODING_SNAPPY
-                ||
-                ( dec->proto_version_and_flags & SRL_PROTOCOL_ENCODING_MASK ) == SRL_PROTOCOL_ENCODING_SNAPPY_INCREMENTAL
-        ) {
+        if (   encoding_flags == SRL_PROTOCOL_ENCODING_SNAPPY
+            || encoding_flags == SRL_PROTOCOL_ENCODING_SNAPPY_INCREMENTAL)
+        {
             if (expect_false( SRL_DEC_HAVE_OPTION(dec, SRL_F_DECODER_REFUSE_SNAPPY) )) {
                 SRL_ERROR("Sereal document is compressed with Snappy, "
                       "but this decoder is configured to refuse Snappy-compressed input.");
@@ -559,17 +644,25 @@ srl_read_header(pTHX_ srl_decoder_t *dec, SV *header_user_data)
             dec->flags |= SRL_F_DECODER_DECOMPRESS_SNAPPY;
         }
         else
+        if (encoding_flags == SRL_PROTOCOL_ENCODING_ZLIB)
+        {
+            if (expect_false( SRL_DEC_HAVE_OPTION(dec, SRL_F_DECODER_REFUSE_ZLIB) )) {
+                SRL_ERROR("Sereal document is compressed with ZLIB, "
+                      "but this decoder is configured to refuse ZLIB-compressed input.");
+            }
+            dec->flags |= SRL_F_DECODER_DECOMPRESS_ZLIB;
+        }
+        else
         {
             SRL_ERRORf1( "Sereal document encoded in an unknown format '%d'",
-                     (dec->proto_version_and_flags & SRL_PROTOCOL_ENCODING_MASK)
-                      >> SRL_PROTOCOL_VERSION_BITS);
+                         encoding_flags >> SRL_PROTOCOL_VERSION_BITS);
         }
 
         /* Must do this via a temporary as it modifes dec->pos itself */
         header_len= srl_read_varint_uv_length(aTHX_ dec, " while reading header");
 
         if (proto_version > 1 && header_len) {
-            /* We have a protocol V2 extensible header:
+            /* We have a protocol V2+ extensible header:
              *  - 8bit bitfield
              *  - if lowest bit set, we have custom-header-user-data after the bitfield
              *  => Only read header user data if an SV* was passed in to fill. */
@@ -593,8 +686,6 @@ srl_read_header(pTHX_ srl_decoder_t *dec, SV *header_user_data)
              * protocol version. */
             dec->pos += header_len;
         }
-    } else {
-        SRL_ERROR("Bad Sereal header: Does not start with Sereal magic");
     }
 }
 
@@ -843,12 +934,34 @@ srl_read_string(pTHX_ srl_decoder_t *dec, int is_utf8, SV* into)
     dec->pos+= len;
 }
 
+/* declare a union so that we are guaranteed the right alignment
+ * rules - this is required for ARM */
+union myfloat {
+    U8 c[sizeof(long double)];
+    float f;
+    double d;
+    long double ld;
+};
+
+/*
+#define TEST_ARM_ARCH
+*/
+#if (defined(TEST_ARM_ARCH) || defined(__ARM_ARCH))
+#define SRL_ARM_ARCH 1
+#endif
 
 SRL_STATIC_INLINE void
 srl_read_float(pTHX_ srl_decoder_t *dec, SV* into)
 {
+    union myfloat val;
+#ifdef SRL_ARM_ARCH
     ASSERT_BUF_SPACE(dec, sizeof(float), " while reading FLOAT");
-    sv_setnv(into, (NV)*((float *)dec->pos));
+    Copy(dec->pos,val.c,sizeof(float),U8);
+#else
+    ASSERT_BUF_SPACE(dec, sizeof(float), " while reading FLOAT");
+    val.f= *((float *)dec->pos);
+#endif
+    sv_setnv(into, (NV)val.f);
     dec->pos+= sizeof(float);
 }
 
@@ -856,8 +969,15 @@ srl_read_float(pTHX_ srl_decoder_t *dec, SV* into)
 SRL_STATIC_INLINE void
 srl_read_double(pTHX_ srl_decoder_t *dec, SV* into)
 {
-    ASSERT_BUF_SPACE(dec, sizeof(double)," while reading DOUBLE");
-    sv_setnv(into, (NV)*((double *)dec->pos));
+    union myfloat val;
+#ifdef SRL_ARM_ARCH
+    ASSERT_BUF_SPACE(dec, sizeof(double), " while reading DOUBLE");
+    Copy(dec->pos,val.c,sizeof(double),U8);
+#else
+    ASSERT_BUF_SPACE(dec, sizeof(double), " while reading DOUBLE");
+    val.d= *((double *)dec->pos);
+#endif
+    sv_setnv(into, (NV)val.d);
     dec->pos+= sizeof(double);
 }
 
@@ -865,8 +985,15 @@ srl_read_double(pTHX_ srl_decoder_t *dec, SV* into)
 SRL_STATIC_INLINE void
 srl_read_long_double(pTHX_ srl_decoder_t *dec, SV* into)
 {
-    ASSERT_BUF_SPACE(dec, sizeof(long double)," while reading LONG_DOUBLE");
-    sv_setnv(into, (NV)*((long double *)dec->pos));
+    union myfloat val;
+#ifdef SRL_ARM_ARCH
+    ASSERT_BUF_SPACE(dec, sizeof(long double), " while reading LONG_DOUBLE");
+    Copy(dec->pos,val.c,sizeof(long double),U8);
+#else
+    ASSERT_BUF_SPACE(dec, sizeof(long double), " while reading LONG_DOUBLE");
+    val.ld= *((long double *)dec->pos);
+#endif
+    sv_setnv(into, (NV)val.ld);
     dec->pos+= sizeof(long double);
 }
 
@@ -1035,7 +1162,12 @@ srl_read_refn(pTHX_ srl_decoder_t *dec, SV* into)
      * We need a new, different tag for true perl undef.
      *
      */
-    else if (SRL_DEC_HAVE_OPTION(dec,SRL_F_DECODER_USE_UNDEF) && tag == SRL_HDR_UNDEF) {
+    else
+    if (
+        ( tag == SRL_HDR_SV_UNDEF )
+        ||
+        ( SRL_DEC_HAVE_OPTION(dec,SRL_F_DECODER_USE_UNDEF) && tag == SRL_HDR_UNDEF )
+    ) {
         dec->pos++;
         referent= &PL_sv_undef;
     }
