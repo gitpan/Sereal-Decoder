@@ -28,8 +28,12 @@ typedef struct {
 
     UV bytes_consumed;
     UV recursion_depth;                 /* Recursion depth of current decoder */
-    U8 proto_version_and_flags;
+    U8 proto_version;
+    U8 encoding_flags;
 } srl_decoder_t;
+
+/* utility routine */
+IV srl_validate_header_version_pv_len(pTHX_ char *strdata, STRLEN len);
 
 /* constructor; don't need destructor, this sets up a callback */
 srl_decoder_t *srl_build_decoder_struct(pTHX_ HV *opt);
@@ -195,7 +199,7 @@ static const char * const tag_name[] = {
 	"RESERVED_2",        /* "6"   54 0x36 0b00110110 */
 	"RESERVED_3",        /* "7"   55 0x37 0b00110111 */
 	"RESERVED_4",        /* "8"   56 0x38 0b00111000 */
-	"SV_UNDEF",          /* "9"   57 0x39 0b00111001 */
+	"CANONICAL_UNDEF",   /* "9"   57 0x39 0b00111001 */
 	"FALSE",             /* ":"   58 0x3a 0b00111010 */
 	"TRUE",              /* ";"   59 0x3b 0b00111011 */
 	"MANY",              /* "<"   60 0x3c 0b00111100 */
