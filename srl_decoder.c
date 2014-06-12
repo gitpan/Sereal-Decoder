@@ -136,10 +136,12 @@ SRL_STATIC_INLINE void srl_read_frozen_object(pTHX_ srl_decoder_t *dec, HV *clas
 SRL_STATIC_INLINE SV *srl_read_extend(pTHX_ srl_decoder_t *dec, SV* into);
 
 
-#define ASSERT_BUF_SPACE(dec,len,msg) STMT_START {              \
-    if (expect_false( (UV)BUF_SPACE((dec)) < (UV)(len) )) { \
-        SRL_ERRORf3("Unexpected termination of packet%s, want %lu bytes, only have %lu available", (msg), (UV)(len), (UV)BUF_SPACE((dec)));  \
-    }                                                       \
+#define ASSERT_BUF_SPACE(dec,len,msg) STMT_START {                  \
+    if (expect_false( (UV)BUF_SPACE((dec)) < (UV)(len) )) {         \
+        SRL_ERRORf3("Unexpected termination of packet%s, "          \
+                    "want %lu bytes, only have %lu available",      \
+                    (msg), (UV)(len), (UV)BUF_SPACE((dec)));        \
+    }                                                               \
 } STMT_END
 
 #define IS_SRL_HDR_ARRAYREF(tag) (((tag) & SRL_HDR_ARRAYREF) == SRL_HDR_ARRAYREF)
@@ -601,25 +603,32 @@ srl_validate_header_version_pv_len(pTHX_ char *strdata, STRLEN len)
          * one byte for header len,
          * one type byte (smallest payload)
          */
-        U32 as_u32= *((U32*)strdata);
+
+        /* Do NOT do *((U32*)strdata at least for these reasons:
+         * (1) Unaligned access can "Bus error" on you
+         *     (char* can be much less aligned than U32).
+         * (2) In ILP64 even if aligned the U32 would be 64 bits wide,
+         *     and the deref would read 8 bytes, more than the smallest
+         *     (valid) message.
+         * (3) Endianness.
+         */
         U8 version_encoding= strdata[SRL_MAGIC_STRLEN];
         U8 version= version_encoding & SRL_PROTOCOL_VERSION_MASK;
 
-        if ( as_u32 == SRL_MAGIC_STRING_UINT_LE ) {
+        if ( memEQ(SRL_MAGIC_STRING, strdata, SRL_MAGIC_STRLEN) ) {
             if ( 0 < version && version < 3 ) {
                 return version_encoding;
             }
         }
         else
-        if ( as_u32 == SRL_MAGIC_STRING_HIGHBIT_UINT_LE ) {
+        if ( memEQ(SRL_MAGIC_STRING_HIGHBIT, strdata, SRL_MAGIC_STRLEN) ) {
             if ( 3 <= version ) {
                 return version_encoding;
-            }
+           }
         }
         else
-        if ( as_u32 == SRL_MAGIC_STRING_HIGHBIT_UTF8_UINT_LE ) {
-            if ( 'l' == version_encoding )
-                return 0;
+        if ( memEQ(SRL_MAGIC_STRING_HIGHBIT_UTF8, strdata, SRL_MAGIC_STRLEN) ) {
+            return 0;
         }
     }
     return -1;
@@ -785,18 +794,18 @@ srl_read_varint_uv_safe(pTHX_ srl_decoder_t *dec)
     return uv;
 }
 
-#define SET_UV_FROM_VARINT(uv, from) STMT_START {      \
-    if (*from < 0x80) {                                             \
-        uv= (UV)*from++;                                            \
-    } else {                                                        \
-        unsigned int lshift= 7;                                     \
-        uv= (UV)(*from++ & 0x7f);                                   \
-        while (*from & 0x80){                                       \
-            uv |= ((UV)(*from++ & 0x7F) << lshift);                 \
-            lshift += 7;                                            \
-        }                                                           \
-        uv |= ((UV)(*from++) << lshift);                            \
-    }                                                               \
+#define SET_UV_FROM_VARINT(uv, from) STMT_START {       \
+    if (*from < 0x80) {                                 \
+        uv= (UV)*from++;                                \
+    } else {                                            \
+        unsigned int lshift= 7;                         \
+        uv= (UV)(*from++ & 0x7f);                       \
+        while (*from & 0x80){                           \
+            uv |= ((UV)(*from++ & 0x7F) << lshift);     \
+            lshift += 7;                                \
+        }                                               \
+        uv |= ((UV)(*from++) << lshift);                \
+    }                                                   \
 } STMT_END
 
 SRL_STATIC_INLINE UV
@@ -955,7 +964,7 @@ srl_read_string(pTHX_ srl_decoder_t *dec, int is_utf8, SV* into)
 }
 
 /* declare a union so that we are guaranteed the right alignment
- * rules - this is required for ARM */
+ * rules - this is required for e.g. ARM */
 union myfloat {
     U8 c[sizeof(long double)];
     float f;
@@ -970,11 +979,18 @@ union myfloat {
 #define SRL_ARM_ARCH 1
 #endif
 
+/* XXX Most (if not all?) non-x86 platforms are strict in their
+ * floating point alignment.  So maybe this logic should be the other
+ * way: default to strict, and do sloppy only if x86? */
+#if defined(SRL_ARM_ARCH) || defined(__hpux)
+#define SRL_STRICT_FP_ALIGN
+#endif
+
 SRL_STATIC_INLINE void
 srl_read_float(pTHX_ srl_decoder_t *dec, SV* into)
 {
     union myfloat val;
-#ifdef SRL_ARM_ARCH
+#ifdef SRL_STRICT_FP_ALIGN
     ASSERT_BUF_SPACE(dec, sizeof(float), " while reading FLOAT");
     Copy(dec->pos,val.c,sizeof(float),U8);
 #else
@@ -990,7 +1006,7 @@ SRL_STATIC_INLINE void
 srl_read_double(pTHX_ srl_decoder_t *dec, SV* into)
 {
     union myfloat val;
-#ifdef SRL_ARM_ARCH
+#ifdef SRL_STRICT_FP_ALIGN
     ASSERT_BUF_SPACE(dec, sizeof(double), " while reading DOUBLE");
     Copy(dec->pos,val.c,sizeof(double),U8);
 #else
@@ -1006,7 +1022,7 @@ SRL_STATIC_INLINE void
 srl_read_long_double(pTHX_ srl_decoder_t *dec, SV* into)
 {
     union myfloat val;
-#ifdef SRL_ARM_ARCH
+#ifdef SRL_STRICT_FP_ALIGN
     ASSERT_BUF_SPACE(dec, sizeof(long double), " while reading LONG_DOUBLE");
     Copy(dec->pos,val.c,sizeof(long double),U8);
 #else
@@ -1695,6 +1711,7 @@ srl_read_single_value_into_container(pTHX_ srl_decoder_t *dec, SV** container)
     U32 item;
     IV iv;
     U8 tag = *dec->pos;
+    U8 *tag_start= dec->pos;
 
     /* it helps to think of this somewhat like a switch, except it does
      * more complicated checks than a single integer expression lookup */
@@ -1740,7 +1757,6 @@ srl_read_single_value_into_container(pTHX_ srl_decoder_t *dec, SV** container)
             SRL_DEC_HAVE_OPTION(dec,SRL_F_DECODER_ALIAS_VARINT) &&
             tag == SRL_HDR_VARINT
         ) {
-            U8 *tag_start= dec->pos;
             dec->pos++;
             item= srl_read_varint_uv(aTHX_ dec);
             if ( item < dec->alias_varint_under ) {
