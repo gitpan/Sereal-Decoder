@@ -5,7 +5,7 @@ use warnings;
 use Carp qw/croak/;
 use XSLoader;
 
-our $VERSION = '3.001_001'; # Don't forget to update the TestCompat set for testing against installed encoders!
+our $VERSION = '3.001_002'; # Don't forget to update the TestCompat set for testing against installed encoders!
 our $XS_VERSION = $VERSION; $VERSION= eval $VERSION;
 
 # not for public consumption, just for testing.
@@ -188,6 +188,15 @@ Note this option changes the structure of the dumped data. Use with caution.
 If set to a true value then this any undef value to be deserialized as
 PL_sv_undef. This may change the structure of the data structure being
 dumped, do not enable this unless you know what you are doing.
+
+=head3 set_readonly
+
+If set to a true value then the output will be completely readonly (deeply).
+
+=head3 set_readonly_scalars
+
+If set to a true value then scalars in the output will be readonly (deeply).
+References won't be readonly.
 
 =head1 INSTANCE METHODS
 

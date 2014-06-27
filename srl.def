@@ -1,0 +1,54 @@
+POS             masked-value:16         # small positive integer - value in low 4 bits (identity)
+
+NEG             masked-value:16         # small negative integer - value in low 4 bits (k+32)
+
+VARINT          varint                  # <VARINT> - Varint variable length integer
+ZIGZAG          varint                  # <ZIGZAG-VARINT> - Zigzag variable length integer
+FLOAT           float                   # <IEEE-FLOAT>
+DOUBLE          double                  # <IEEE-DOUBLE> 
+LONG_DOUBLE     long-double             # <IEEE-LONG-DOUBLE> 
+UNDEF           none                    # None - Perl undef var; eg my $var= undef;
+BINARY          len-varint              # <LEN-VARINT> <BYTES> - binary/(latin1) string
+STR_UTF8        len-varint              # <LEN-VARINT> <UTF8> - utf8 string
+
+REFN            tag                     # <ITEM-TAG>    - ref to next item
+REFP            offset-varint           # <OFFSET-VARINT> - ref to previous item stored at offset
+HASH            count-varint            # <COUNT-VARINT> [<KEY-TAG> <ITEM-TAG> ...] - count followed by key/value pairs
+ARRAY           count-varint            # <COUNT-VARINT> [<ITEM-TAG> ...] - count followed by items
+OBJECT          tag,tag                 # <STR-TAG> <ITEM-TAG> - class, object-item
+OBJECTV         offset-varint,tag       # <OFFSET-VARINT> <ITEM-TAG> - offset of previously used classname tag - object-item
+ALIAS           offset-varint           # <OFFSET-VARINT> - alias to item defined at offset
+COPY            offset-varint           # <OFFSET-VARINT> - copy of item defined at offset
+
+WEAKEN          tag                     # <REF-TAG> - Weaken the following reference
+REGEXP          tag,tag                 # <PATTERN-STR-TAG> <MODIFIERS-STR-TAG>
+
+OBJECT_FREEZE   tag,tag                 # <STR-TAG> <ITEM-TAG> - class, object-item. 
+                                        # Need to call "THAW" method on class after decoding
+
+OBJECTV_FREEZE  offset-varint,tag       # <OFFSET-VARINT> <ITEM-TAG> - (OBJECTV_FREEZE is to 
+                                        # OBJECT_FREEZE as OBJECTV is to OBJECT) */
+
+RESERVED        illegal repeat:5        # reserved
+
+CANONICAL_UNDEF none                    # undef (PL_sv_undef) - "the" Perl undef (see notes)
+FALSE           none                    # false (PL_sv_no)
+TRUE            none                    # true  (PL_sv_yes)
+
+MANY            illegal                 # <LEN-VARINT> <TYPE-BYTE> <TAG-DATA> - repeated tag
+                                        # (not done yet, will be implemented in version 3)
+                                            
+PACKET_START    none                    # (first byte of magic string in header)
+
+
+EXTEND          illegal                 # <BYTE> - for additional tags
+
+PAD             none                    # (ignored tag, skip to next byte)
+ARRAYREF        masked-count:16         # [<ITEM-TAG> ...] - count of items in low 4 bits (ARRAY must be refcnt=1)
+
+
+HASHREF         masked-count-pairs:16   # [<KEY-TAG> <ITEM-TAG> ...] - count in low 4 bits, 
+                                        # key/value pairs (HASH must be refcnt=1)
+
+SHORT_BINARY    masked-len:32           # <BYTES> - binary/latin1 string, length encoded in low 5 bits of tag */
+
