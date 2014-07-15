@@ -27,7 +27,6 @@ snappy/csnappy_compress.c
 snappy/csnappy_decompress.c
 snappy/csnappy_internal.h
 snappy/csnappy_internal_userspace.h
-srl.def
 srl_common.h
 srl_decoder.c
 srl_decoder.h
