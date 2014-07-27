@@ -24,14 +24,15 @@ BEGIN {
 use Sereal::TestSet qw(:all);
 use Test::More;
 
+my $version;
+
 my $ok = have_encoder_and_decoder();
 if (not $ok) {
     plan skip_all => 'Did not find right version of encoder';
 }
 else {
-    run_roundtrip_tests(2); # 2 == run only tests for proto v2
+    run_roundtrip_tests("plain");
 }
-
 
 pass();
 done_testing();
