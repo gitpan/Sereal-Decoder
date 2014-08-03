@@ -538,6 +538,50 @@ constant_20 (pTHX_ const char *name, IV *iv_return) {
 }
 
 static int
+constant_21 (pTHX_ const char *name, IV *iv_return) {
+  /* When generated this function returned values for the list of names given
+     here.  However, subsequent manual editing may have added or removed some.
+     SRL_HDR_ARRAYREF_HIGH SRL_HDR_OBJECT_FREEZE SRL_HDR_RESERVED_HIGH */
+  /* Offset 13 gives the best switch position.  */
+  switch (name[13]) {
+  case 'R':
+    if (memEQ(name, "SRL_HDR_ARRAYREF_HIGH", 21)) {
+    /*                            ^              */
+#ifdef SRL_HDR_ARRAYREF_HIGH
+      *iv_return = SRL_HDR_ARRAYREF_HIGH;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
+  case 'T':
+    if (memEQ(name, "SRL_HDR_OBJECT_FREEZE", 21)) {
+    /*                            ^              */
+#ifdef SRL_HDR_OBJECT_FREEZE
+      *iv_return = SRL_HDR_OBJECT_FREEZE;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
+  case 'V':
+    if (memEQ(name, "SRL_HDR_RESERVED_HIGH", 21)) {
+    /*                            ^              */
+#ifdef SRL_HDR_RESERVED_HIGH
+      *iv_return = SRL_HDR_RESERVED_HIGH;
+      return PERL_constant_ISIV;
+#else
+      return PERL_constant_NOTDEF;
+#endif
+    }
+    break;
+  }
+  return PERL_constant_NOTFOUND;
+}
+
+static int
 constant_24 (pTHX_ const char *name, IV *iv_return) {
   /* When generated this function returned values for the list of names given
      here.  However, subsequent manual editing may have added or removed some.
@@ -725,18 +769,19 @@ use ExtUtils::Constant qw (constant_types C_constant XS_constant);
 my $types = {map {($_, 1)} qw(IV)};
 my @names = (qw(SRL_HDR_ALIAS SRL_HDR_ARRAY SRL_HDR_ARRAYREF
 	       SRL_HDR_ARRAYREF_HIGH SRL_HDR_ARRAYREF_LOW SRL_HDR_BINARY
-	       SRL_HDR_COPY SRL_HDR_DOUBLE SRL_HDR_EXTEND SRL_HDR_FALSE
-	       SRL_HDR_FLOAT SRL_HDR_HASH SRL_HDR_HASHREF SRL_HDR_HASHREF_HIGH
-	       SRL_HDR_HASHREF_LOW SRL_HDR_LONG_DOUBLE SRL_HDR_MANY SRL_HDR_NEG
-	       SRL_HDR_NEG_HIGH SRL_HDR_NEG_LOW SRL_HDR_OBJECT SRL_HDR_OBJECTV
-	       SRL_HDR_OBJECTV_FREEZE SRL_HDR_PACKET_START SRL_HDR_PAD
-	       SRL_HDR_POS SRL_HDR_POS_HIGH SRL_HDR_POS_LOW SRL_HDR_REFN
-	       SRL_HDR_REFP SRL_HDR_REGEXP SRL_HDR_RESERVED
-	       SRL_HDR_RESERVED_HIGH SRL_HDR_RESERVED_LOW SRL_HDR_SHORT_BINARY
-	       SRL_HDR_SHORT_BINARY_HIGH SRL_HDR_SHORT_BINARY_LOW
-	       SRL_HDR_STR_UTF8 SRL_HDR_TRACK_FLAG SRL_HDR_TRUE SRL_HDR_UNDEF
-	       SRL_HDR_VARINT SRL_HDR_WEAKEN SRL_HDR_ZIGZAG
-	       SRL_MAGIC_STRING_HIGHBIT_UINT_BE
+	       SRL_HDR_CANONICAL_UNDEF SRL_HDR_COPY SRL_HDR_DOUBLE
+	       SRL_HDR_EXTEND SRL_HDR_FALSE SRL_HDR_FLOAT SRL_HDR_HASH
+	       SRL_HDR_HASHREF SRL_HDR_HASHREF_HIGH SRL_HDR_HASHREF_LOW
+	       SRL_HDR_LONG_DOUBLE SRL_HDR_MANY SRL_HDR_NEG SRL_HDR_NEG_HIGH
+	       SRL_HDR_NEG_LOW SRL_HDR_OBJECT SRL_HDR_OBJECTV
+	       SRL_HDR_OBJECTV_FREEZE SRL_HDR_OBJECT_FREEZE
+	       SRL_HDR_PACKET_START SRL_HDR_PAD SRL_HDR_POS SRL_HDR_POS_HIGH
+	       SRL_HDR_POS_LOW SRL_HDR_REFN SRL_HDR_REFP SRL_HDR_REGEXP
+	       SRL_HDR_RESERVED SRL_HDR_RESERVED_HIGH SRL_HDR_RESERVED_LOW
+	       SRL_HDR_SHORT_BINARY SRL_HDR_SHORT_BINARY_HIGH
+	       SRL_HDR_SHORT_BINARY_LOW SRL_HDR_STR_UTF8 SRL_HDR_TRACK_FLAG
+	       SRL_HDR_TRUE SRL_HDR_UNDEF SRL_HDR_VARINT SRL_HDR_WEAKEN
+	       SRL_HDR_ZIGZAG SRL_MAGIC_STRING_HIGHBIT_UINT_BE
 	       SRL_MAGIC_STRING_HIGHBIT_UINT_LE
 	       SRL_MAGIC_STRING_HIGHBIT_UTF8_UINT_BE
 	       SRL_MAGIC_STRING_HIGHBIT_UTF8_UINT_LE SRL_MAGIC_STRING_UINT_BE
@@ -821,33 +866,7 @@ __END__
     return constant_20 (aTHX_ name, iv_return);
     break;
   case 21:
-    /* Names all of length 21.  */
-    /* SRL_HDR_ARRAYREF_HIGH SRL_HDR_RESERVED_HIGH */
-    /* Offset 10 gives the best switch position.  */
-    switch (name[10]) {
-    case 'R':
-      if (memEQ(name, "SRL_HDR_ARRAYREF_HIGH", 21)) {
-      /*                         ^                 */
-#ifdef SRL_HDR_ARRAYREF_HIGH
-        *iv_return = SRL_HDR_ARRAYREF_HIGH;
-        return PERL_constant_ISIV;
-#else
-        return PERL_constant_NOTDEF;
-#endif
-      }
-      break;
-    case 'S':
-      if (memEQ(name, "SRL_HDR_RESERVED_HIGH", 21)) {
-      /*                         ^                 */
-#ifdef SRL_HDR_RESERVED_HIGH
-        *iv_return = SRL_HDR_RESERVED_HIGH;
-        return PERL_constant_ISIV;
-#else
-        return PERL_constant_NOTDEF;
-#endif
-      }
-      break;
-    }
+    return constant_21 (aTHX_ name, iv_return);
     break;
   case 22:
     /* Names all of length 22.  */
@@ -879,13 +898,32 @@ __END__
     }
     break;
   case 23:
-    if (memEQ(name, "SRL_MASK_ARRAYREF_COUNT", 23)) {
-#ifdef SRL_MASK_ARRAYREF_COUNT
-      *iv_return = SRL_MASK_ARRAYREF_COUNT;
-      return PERL_constant_ISIV;
+    /* Names all of length 23.  */
+    /* SRL_HDR_CANONICAL_UNDEF SRL_MASK_ARRAYREF_COUNT */
+    /* Offset 6 gives the best switch position.  */
+    switch (name[6]) {
+    case 'R':
+      if (memEQ(name, "SRL_HDR_CANONICAL_UNDEF", 23)) {
+      /*                     ^                       */
+#ifdef SRL_HDR_CANONICAL_UNDEF
+        *iv_return = SRL_HDR_CANONICAL_UNDEF;
+        return PERL_constant_ISIV;
 #else
-      return PERL_constant_NOTDEF;
+        return PERL_constant_NOTDEF;
 #endif
+      }
+      break;
+    case 'S':
+      if (memEQ(name, "SRL_MASK_ARRAYREF_COUNT", 23)) {
+      /*                     ^                       */
+#ifdef SRL_MASK_ARRAYREF_COUNT
+        *iv_return = SRL_MASK_ARRAYREF_COUNT;
+        return PERL_constant_ISIV;
+#else
+        return PERL_constant_NOTDEF;
+#endif
+      }
+      break;
     }
     break;
   case 24:
