@@ -12,6 +12,7 @@ const-xs.inc
 Decoder.xs
 inc/Devel/CheckLib.pm
 inc/Sereal/BuildTools.pm
+INSTALL
 lib/Sereal/Decoder.pm
 lib/Sereal/Decoder/Constants.pm
 lib/Sereal/Performance.pm
